@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Guardian Web Shield</title>
+    <link rel="stylesheet" href="glance.css" />
+  </head>
+  <body>
+    <main class="glance-popup" aria-labelledby="glanceTitle">
+      <section class="glance-card hero-card">
+        <div class="brand-row">
+          <div class="brand-mark" aria-hidden="true">
+            <img src="icons/icon-shield-pulse.svg" class="brand-icon" alt="" />
+          </div>
+          <div>
+            <p class="eyebrow">AI Guardian</p>
+            <h1 id="glanceTitle">Web Shield</h1>
+          </div>
+        </div>
+
+        <p class="hero-note">A calm quick look at the page you are on.</p>
+      </section>
+
+      <section class="glance-card score-card" aria-labelledby="quickScoreHeading">
+        <p id="quickScoreHeading" class="section-label">Current page</p>
+
+        <div id="scoreBadge" class="score-badge tone-unknown" role="status" aria-live="polite" aria-atomic="true">
+          <div id="scoreNumber" class="score-number">--</div>
+          <div id="scoreLabel" class="score-label">Waiting</div>
+        </div>
+
+        <p id="statusSummary" class="status-summary">Scanning this page now.</p>
+      </section>
+
+      <section class="glance-card actions-card" aria-label="Quick actions">
+        <button id="openPanelButton" class="button button-primary" type="button">
+          Open Side Panel
+        </button>
+
+        <div class="button-row">
+          <button id="refreshButton" class="button button-secondary" type="button">
+            Scan Again
+          </button>
+          <button id="readButton" class="button button-tertiary" type="button">
+            Read Out Loud
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <script src="glance.js"></script>
+  </body>
+</html>
