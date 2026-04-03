@@ -10,6 +10,19 @@ Risk scores are intended to provide guidance and awareness. They do not guarante
 
 ---
 
+# AI Guardian Web Shield is designed around three principles:
+
+Calm security
+Security tools should reduce anxiety, not increase it.
+
+Local privacy
+Browsing data should remain on the user's device whenever possible.
+
+Human clarity
+Security signals should be understandable without technical expertise.
+
+---
+
 # Screenshots
 
 ## Real-time risk scoring on webpages
