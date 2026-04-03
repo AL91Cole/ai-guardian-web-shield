@@ -341,6 +341,16 @@ Conceptual connections include:
 • privacy-first architecture thinking  
 
 ---
+## Possible future improvements
+
+- optional threat intelligence enrichment
+- expanded phishing pattern detection
+- improved brand impersonation similarity checks
+- accessibility personalization profiles
+- enterprise policy integration options
+- optional encrypted sync of user preferences
+- research testing for slowdown-based risk detection UX
+---
 
 # License
 
