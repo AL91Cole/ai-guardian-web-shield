@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">AI Guardian Web Shield icon</title>
+  <desc id="desc">A sleek dark shield with a mint pulse and signal dot inside a rounded square.</desc>
+  <defs>
+    <linearGradient id="tileFill" x1="18" y1="14" x2="112" y2="114" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#174a61" />
+      <stop offset="0.6" stop-color="#0d2f43" />
+      <stop offset="1" stop-color="#081a29" />
+    </linearGradient>
+    <radialGradient id="tileGlow" cx="34" cy="26" r="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#78e0ca" stop-opacity="0.38" />
+      <stop offset="0.55" stop-color="#4bb6a9" stop-opacity="0.12" />
+      <stop offset="1" stop-color="#4bb6a9" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="shieldFill" x1="42" y1="24" x2="84" y2="102" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2a6f86" />
+      <stop offset="1" stop-color="#12384e" />
+    </linearGradient>
+  </defs>
+
+  <rect x="6" y="6" width="116" height="116" rx="28" fill="url(#tileFill)" />
+  <rect x="6" y="6" width="116" height="116" rx="28" fill="url(#tileGlow)" />
+  <rect x="7" y="7" width="114" height="114" rx="27" fill="none" stroke="#2f6f84" stroke-opacity="0.55" stroke-width="2" />
+
+  <path
+    d="M64 24L86 31C91 32.6 94 35.8 94 40V58C94 77 82 90 64 102C46 90 34 77 34 58V40C34 35.8 37 32.6 42 31L64 24Z"
+    fill="url(#shieldFill)"
+    stroke="#9be5d0"
+    stroke-width="3"
+    stroke-linejoin="round"
+  />
+
+  <path
+    d="M43 64H53L58.5 52L66 77L72.5 59H84"
+    fill="none"
+    stroke="#f4fffc"
+    stroke-width="6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <circle cx="86.5" cy="46.5" r="5" fill="#88d7c1" />
+</svg>
