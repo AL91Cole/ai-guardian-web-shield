@@ -1,0 +1,22 @@
+Privacy Policy for AI Guardian Web Shield
+
+AI Guardian Web Shield is designed with a privacy-first approach. The extension analyzes webpage links and content locally within the user's browser in order to identify potential phishing indicators, suspicious language patterns, and other possible security risks.
+
+Data Collection
+AI Guardian Web Shield does not collect personally identifiable information. The extension processes webpage content locally on the user's device and does not transmit browsing data to external servers.
+
+Data Storage
+The extension may store user preferences locally within the browser using Chrome storage APIs. This may include interface settings and protection configuration choices. No personal data is stored.
+
+Data Sharing
+AI Guardian Web Shield does not sell, transfer, or share personal data with third parties.
+
+Remote Code
+AI Guardian Web Shield does not use remote code execution. All analysis scripts are packaged within the extension.
+
+Purpose
+The sole purpose of the extension is to provide plain-language guidance about potential security risks in webpages and links in order to help users make informed browsing decisions.
+
+Contact
+For questions or support, please visit:
+https://github.com/AL91Cole/ai-guardian-web-shield
