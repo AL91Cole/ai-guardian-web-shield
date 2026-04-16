@@ -28,29 +28,5 @@
   },
   "side_panel": {
     "default_path": "sidepanel.html"
-  },
-  "content_scripts": [
-    {
-      "matches": [
-        "http://*/*",
-        "https://*/*"
-      ],
-      "js": [
-        "content.js",
-        "shared/debounce.js",
-        "shared/domUtils.js",
-        "shared/urlUtils.js",
-        "email/emailState.js",
-        "email/providerDetection.js",
-        "email/emailHeuristics.js",
-        "email/inboxRowScanner.js",
-        "email/messageLinkScanner.js",
-        "email/pageModeDetection.js",
-        "email/authFlowHandler.js",
-        "email/emailUiInjector.js",
-        "email/emailSafetyController.js"
-      ],
-      "run_at": "document_idle"
-    }
-  ]
+  }
 }

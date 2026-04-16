@@ -26,6 +26,22 @@ const DEFAULT_SETTINGS = Object.freeze({
   trustedAdultContact: ""
 });
 
+const PAGE_SCRIPT_FILES = Object.freeze([
+  "content.js",
+  "shared/debounce.js",
+  "shared/domUtils.js",
+  "shared/urlUtils.js",
+  "email/emailState.js",
+  "email/providerDetection.js",
+  "email/emailHeuristics.js",
+  "email/inboxRowScanner.js",
+  "email/messageLinkScanner.js",
+  "email/pageModeDetection.js",
+  "email/authFlowHandler.js",
+  "email/emailUiInjector.js",
+  "email/emailSafetyController.js"
+]);
+
 const PROTECTION_LEVEL_COPY = {
   standard: "Standard Protection keeps everyday guidance balanced.",
   family: "Family Safe adds stronger filtering and calmer guidance for shared browsing.",
@@ -1248,12 +1264,11 @@ async function requestLivePageReport(tab) {
   }
 
   try {
-    await chrome.scripting.executeScript({
-      target: {
-        tabId: tab.id
-      },
-      files: ["content.js"]
-    });
+    const injectionWorked = await ensurePageScriptsInjected(tab.id);
+
+    if (!injectionWorked) {
+      return null;
+    }
   } catch (error) {
     return null;
   }
@@ -1269,6 +1284,41 @@ async function requestLivePageReport(tab) {
     }
 
     return null;
+  }
+}
+
+async function ensurePageScriptsInjected(tabId) {
+  if (typeof tabId !== "number") {
+    return false;
+  }
+
+  try {
+    const [{ result: alreadyReady = false } = {}] = await chrome.scripting.executeScript({
+      target: {
+        tabId
+      },
+      func: () => {
+        return Boolean(window.aiGuardianWebShieldLoaded && window.AI_GUARDIAN_EMAIL?.controller);
+      }
+    });
+
+    if (alreadyReady) {
+      return true;
+    }
+  } catch (error) {
+    return false;
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: {
+        tabId
+      },
+      files: PAGE_SCRIPT_FILES
+    });
+    return true;
+  } catch (error) {
+    return false;
   }
 }
 
