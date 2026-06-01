@@ -1,21 +1,29 @@
 Privacy Policy for AI Guardian Web Shield
+AI Guardian Web Shield is designed with a privacy-first, zero-dependency approach. The extension analyzes webpage links, URLs, and content locally within the user's browser in order to identify potential phishing indicators, suspicious language patterns, and other possible security risks.
 
-AI Guardian Web Shield is designed with a privacy-first approach. The extension analyzes webpage links and content locally within the user's browser in order to identify potential phishing indicators, suspicious language patterns, and other possible security risks.
+Data Collection and Processing
+AI Guardian Web Shield does not collect personally identifiable information. To provide proactive, offline security, the extension processes the following strictly on your device:
 
-Data Collection
-AI Guardian Web Shield does not collect personally identifiable information. The extension processes webpage content locally on the user's device and does not transmit browsing data to external servers.
+Web History (URLs): Analyzed locally to calculate string entropy and identify deceptive homograph or Punycode attacks.
+
+Website Content: Analyzed locally to evaluate email bodies and form fields for social engineering triggers.
+
+All processing is performed locally on the user's hardware. The extension does not transmit browsing data, keystrokes, or website content to any external servers or public APIs.
 
 Data Storage
-The extension may store user preferences locally within the browser using Chrome storage APIs. This may include interface settings and protection configuration choices. No personal data is stored.
+The extension stores data strictly within the browser's local sandbox using Chrome storage APIs. This local storage is limited to interface preferences, visual guardrail settings, and locally cached heuristic threat rules. No personal or identifiable data is stored.
+
+Network Communications and Organizational Sync
+AI Guardian Web Shield is designed to operate completely offline. For organizational deployments, such as school districts or local enterprise networks, the extension includes an optional Local Intranet Policy Sync. This feature allows the extension to pull updated threat intelligence rules directly from a secure, internal local area network (LAN) server. This connection only fetches rulesets and never transmits user data, telemetry, or browsing history.
 
 Data Sharing
-AI Guardian Web Shield does not sell, transfer, or share personal data with third parties.
+AI Guardian Web Shield does not sell, transfer, or share personal data, browsing history, or telemetry with any third parties.
 
 Remote Code
-AI Guardian Web Shield does not use remote code execution. All analysis scripts are packaged within the extension.
+AI Guardian Web Shield does not use remote code execution. All analysis scripts, including heuristic engines, text analysis algorithms, and visual similarity matrices, are packaged entirely within the extension.
 
 Purpose
-The sole purpose of the extension is to provide plain-language guidance about potential security risks in webpages and links in order to help users make informed browsing decisions.
+The sole purpose of the extension is to provide local, privacy-preserving guidance about potential security risks in webpages and links to help users make informed browsing decisions and prevent credential exfiltration.
 
 Contact
 For questions or support, please visit:
