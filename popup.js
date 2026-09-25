@@ -27,6 +27,8 @@ const DEFAULT_SETTINGS = Object.freeze({
 });
 
 const PAGE_SCRIPT_FILES = Object.freeze([
+  "shared/behaviorCorrelation.js",
+  "shared/behaviorMonitor.js",
   "content.js",
   "shared/debounce.js",
   "shared/domUtils.js",
@@ -1445,12 +1447,34 @@ function renderReport(report) {
   cleanUrl.textContent = report.cleanedUrl;
 
   renderReasonList(report.reasons || []);
+  renderBehaviorChain(report.behaviorSummary);
   renderEmailSafetyPreview(report.emailSafetyPreview);
   renderSiteIdentityCheck(report.siteIdentityCheck);
   renderFlaggedLinks(report.flaggedLinks || []);
   renderTermsSummary(report.termsSummary);
   renderSlowdownCard();
   renderFamilyProtectionPanel();
+}
+
+function renderBehaviorChain(summary) {
+  const panel = document.getElementById("behaviorChainPanel");
+  if (!panel) return;
+  const finding = summary?.findings?.[0];
+  panel.hidden = !finding;
+  const steps = document.getElementById("behaviorChainSteps");
+  steps.replaceChildren();
+  if (!finding) return;
+  (finding.chain || []).forEach(step => {
+    const item = document.createElement("li");
+    item.textContent = step;
+    steps.appendChild(item);
+  });
+  document.getElementById("behaviorChainDestination").textContent = `Destination: ${finding.destinationOrigin}`;
+  document.getElementById("behaviorChainOutcome").textContent = {
+    attempted: "Outcome: submission attempted; transfer not confirmed.",
+    paused: "Outcome: Guardian paused this submission attempt.",
+    continued: "Outcome: you allowed another submission attempt; transfer not confirmed."
+  }[finding.stage] || "Outcome: transfer not confirmed.";
 }
 
 function renderEmailSafetyPreview(emailPreview) {
