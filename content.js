@@ -773,7 +773,9 @@
     pageWarningLevelShown: 0,
     approvedNavigations: new Set(),
     approvedNavigationExpirations: new Map(),
-    approvedForms: new Set(),
+    approvedForms: new WeakMap(),
+    behaviorMonitor: globalThis.AI_GUARDIAN_BEHAVIOR_MONITOR.createMonitor(),
+    behaviorExpiryTimer: null,
     shownWarningKeys: new Set(),
     refreshTimer: null,
     pageBannerTimer: null,
@@ -1030,6 +1032,9 @@
   function attachPageListeners() {
     document.addEventListener("click", handleDocumentClick, true);
     document.addEventListener("submit", handleFormSubmit, true);
+    const observeCredentialInteraction = (event) => state.behaviorMonitor.interaction(event, location.href);
+    document.addEventListener("focusin", observeCredentialInteraction, true);
+    document.addEventListener("input", observeCredentialInteraction, true);
     window.addEventListener("hashchange", handleLocationMaybeChanged);
     window.addEventListener("popstate", handleLocationMaybeChanged);
 
@@ -1123,7 +1128,9 @@
     state.lastReportSignature = "";
     state.pageWarningLevelShown = 0;
     state.approvedNavigations.clear();
-    state.approvedForms.clear();
+    state.approvedForms = new WeakMap();
+    state.behaviorMonitor.reset();
+    window.clearTimeout(state.behaviorExpiryTimer);
     state.shownWarningKeys.clear();
 
     hideDecisionDialog();
@@ -1145,6 +1152,10 @@
   }
 
   function analyzePage(options = {}) {
+    if (location.href !== state.lastUrl) {
+      state.lastUrl = location.href;
+      resetCurrentPageStateForNavigation();
+    }
     const report = buildPageReport();
     const signature = createReportSignature(report);
 
@@ -1544,8 +1555,16 @@
         (fakeAccountSuspensionAndSignIn ? 1 : 0)
     });
 
+    // Apply observed action chains after reputation discounts: a trusted address
+    // does not make a password-in-URL submission safe.
+    const behaviorSummary = state.behaviorMonitor.getSummary();
+    const baseScore = score;
+    score = Math.max(score, behaviorSummary.score);
     const bandDetails = getBandDetails(score);
-    const finalReasons = getTopReasonTexts(reasonEntries, 3);
+    const finalReasons = uniqueList([
+      ...behaviorSummary.reasons,
+      ...getTopReasonTexts(reasonEntries, 3)
+    ]).slice(0, 3);
     const autoWarningEligible =
       score >= protectionProfile.autoPageWarningThreshold &&
       signalCounts.strong > 0 &&
@@ -1561,6 +1580,7 @@
       ok: true,
       pageUrl: location.href,
       score,
+      baseScore,
       band: bandDetails.band,
       label: bandDetails.label,
       summary: bandDetails.summary,
@@ -1575,6 +1595,11 @@
       pageTitle,
       domain: currentHost,
       cleanedUrl: urlAssessment.cleanedUrl,
+      behaviorSummary: {
+        score: behaviorSummary.score,
+        reasons: behaviorSummary.reasons,
+        findings: behaviorSummary.findings
+      },
       emailSafetyPreview,
       siteIdentityCheck,
       flaggedLinks: linkInsights.flaggedLinks,
@@ -3349,17 +3374,35 @@
   }
 
   function handleFormSubmit(event) {
-    if (!state.settings.proactiveWarningsEnabled) {
-      return;
-    }
-
+    // requestSubmit() produces a browser submit event; dispatchEvent() alone
+    // neither submits a form nor proves that credentials were used.
+    if (!event.isTrusted) return;
     const form = event.target;
 
     if (!(form instanceof HTMLFormElement) || form.closest("#ai-guardian-root")) {
       return;
     }
 
-    const formAssessment = assessForm(form);
+    if (location.href !== state.lastUrl) {
+      state.lastUrl = location.href;
+      resetCurrentPageStateForNavigation();
+    }
+    const submitter = event.submitter || null;
+    const intent = globalThis.AI_GUARDIAN_BEHAVIOR_MONITOR.getSubmission(form, submitter, location.href);
+    if (intent.method === "DIALOG") return;
+    const formAssessment = assessForm(form, intent);
+    const approval = state.approvedForms.get(form);
+    state.approvedForms.delete(form);
+    const approved = approval?.intentKey === intent.intentKey && approval?.submitter === submitter;
+    const observed = state.behaviorMonitor.submit(form, submitter, location.href, {
+      suspiciousDestination: formAssessment.riskContext.suspiciousDestination,
+      stage: approved ? "continued" : "attempted"
+    });
+    const chain = observed.current;
+    formAssessment.score = Math.max(formAssessment.score, chain.score);
+    formAssessment.reasons = uniqueList([...chain.reasons, ...formAssessment.reasons]);
+    refreshBehaviorReport();
+    if (approved || !state.settings.proactiveWarningsEnabled) return;
     const protectionProfile = getProtectionProfile();
 
     if (formAssessment.score < protectionProfile.actionWarningThreshold) {
@@ -3368,15 +3411,16 @@
 
     const warningKey = `form|${formAssessment.key}`;
 
-    if (state.approvedForms.has(warningKey) || state.shownWarningKeys.has(warningKey)) {
-      return;
-    }
-
     event.preventDefault();
     event.stopImmediatePropagation();
+    state.behaviorMonitor.submit(form, submitter, location.href, {
+      suspiciousDestination: formAssessment.riskContext.suspiciousDestination,
+      stage: "paused"
+    });
+    refreshBehaviorReport();
 
     const guidedFlags = getFormGuidedProtectionFlags(formAssessment);
-    const useGuidedProtection = shouldUseGuidedProtectionMode(
+    const useGuidedProtection = chain.score === 0 && shouldUseGuidedProtectionMode(
       formAssessment.score,
       formAssessment.signalCounts,
       guidedFlags
@@ -3391,9 +3435,10 @@
       severity: formAssessment.score >= 80 ? "risk" : "high",
       title: useGuidedProtection
         ? guidedCopy.title
-        : trustCopy.title,
+        : chain.score > 0 ? "Check where your sign-in details would go" : trustCopy.title,
       message: useGuidedProtection
         ? guidedCopy.message
+        : chain.score > 0 ? "Connected actions need a closer look. This form submission is paused."
         : state.settings.extraSimpleLanguageEnabled
           ? "Pause before you send your details."
           : "Please take a moment before you send your details.",
@@ -3404,8 +3449,18 @@
       continueLabel: "Continue Anyway",
       stayLabel: "Go Back",
       onContinue: () => {
-        state.approvedForms.add(warningKey);
-        HTMLFormElement.prototype.submit.call(form);
+        if (!form.isConnected || (submitter && (submitter.form !== form || !submitter.isConnected))) return;
+        const nextIntent = globalThis.AI_GUARDIAN_BEHAVIOR_MONITOR.getSubmission(form, submitter, location.href);
+        // Approval covers this exact action once. A changed action is checked again.
+        if (nextIntent.intentKey === intent.intentKey) {
+          state.approvedForms.set(form, { intentKey: intent.intentKey, submitter });
+        }
+        try {
+          // Preserve validation, submitter overrides, and the page's submit handlers.
+          HTMLFormElement.prototype.requestSubmit.call(form, submitter || undefined);
+        } finally {
+          state.approvedForms.delete(form);
+        }
       }
     });
     reportGuardianActivity("risky-action", {
@@ -3413,10 +3468,18 @@
     });
   }
 
-  function assessForm(form) {
+  function refreshBehaviorReport() {
+    analyzePage({ forceRefresh: true, showPageWarnings: false });
+    window.clearTimeout(state.behaviorExpiryTimer);
+    state.behaviorExpiryTimer = window.setTimeout(() => {
+      analyzePage({ forceRefresh: true, showPageWarnings: false });
+    }, 90500);
+  }
+
+  function assessForm(form, intent = globalThis.AI_GUARDIAN_BEHAVIOR_MONITOR.getSubmission(form, null, location.href)) {
     const currentHost = normalizeHost(location.hostname);
     const currentRootDomain = getRootDomain(currentHost);
-    const actionUrl = form.getAttribute("action") || location.href;
+    const actionUrl = intent.destinationUrl;
     const actionAssessment = assessUrl(actionUrl, {
       currentHost,
       currentRootDomain
@@ -3427,10 +3490,11 @@
       moderate: actionAssessment.signalCounts.moderate,
       strong: actionAssessment.signalCounts.strong
     };
-    let score = Math.max(actionAssessment.score, state.currentReport ? state.currentReport.score : 0);
+    const pageScore = state.currentReport?.baseScore ?? state.currentReport?.score ?? 0;
+    let score = Math.max(actionAssessment.score, pageScore);
 
     if (fieldInfo.passwordCount > 0) {
-      if (actionAssessment.signalCounts.strong > 0 || (state.currentReport && state.currentReport.score >= 40)) {
+      if (actionAssessment.signalCounts.strong > 0 || pageScore >= 40) {
         score += 10;
         signalCounts.moderate += 1;
         reasons.push("This form asks for a password on a page that needs extra care.");
@@ -3444,7 +3508,7 @@
       const needsExtraCare =
         actionAssessment.signalCounts.strong > 0 ||
         actionAssessment.signalCounts.moderate >= 2 ||
-        (state.currentReport && state.currentReport.score >= 40);
+        pageScore >= 40;
 
       score += fieldInfo.privateCount >= 3 ? (needsExtraCare ? 10 : 6) : needsExtraCare ? 6 : 4;
 
@@ -3459,7 +3523,7 @@
       reasons.push(actionAssessment.reasons[0] || "The form destination may need extra care.");
     }
 
-    if ((form.method || "get").toLowerCase() === "get" && fieldInfo.privateCount > 0) {
+    if (intent.method === "GET" && (fieldInfo.privateCount > 0 || intent.credential)) {
       score += 10;
       signalCounts.strong += 1;
       reasons.push("This form may place personal details into the address bar.");
@@ -4041,6 +4105,8 @@
     });
 
     continueButton.addEventListener("click", (event) => {
+      // A page script must not impersonate the user's approval of a warning.
+      if (!event.isTrusted) return;
       event.preventDefault();
       event.stopPropagation();
       console.debug("[AI Guardian] Warning modal Continue Anyway clicked.");
@@ -6259,6 +6325,7 @@
       report.score,
       report.label,
       report.reasons.join("|"),
+      JSON.stringify(report.behaviorSummary || {}),
       report.emailSafetyPreview?.summary || "",
       report.emailSafetyPreview?.reasons?.join("|") || "",
       report.flaggedLinks.map((link) => `${link.cleanedUrl}:${link.score}`).join("|"),

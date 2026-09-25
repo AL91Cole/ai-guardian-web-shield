@@ -1,0 +1,21 @@
+name: Extension checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/*.test.js
+      - name: Check extension JavaScript syntax
+        run: |
+          for file in background.js content.js popup.js glance.js shared/*.js email/*.js; do
+            node --check "$file" || exit 1
+          done
+      - run: git diff --check

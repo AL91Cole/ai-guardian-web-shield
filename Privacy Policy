@@ -8,6 +8,8 @@ Web History (URLs): Analyzed locally to calculate string entropy and identify de
 
 Website Content: Analyzed locally to evaluate email bodies and form fields for social engineering triggers.
 
+Connected Form Actions: The extension observes sign-in field types and whether a field was interacted with, effective form destinations and methods, and whether Guardian paused or allowed a submission attempt. This feature never reads field values. Its bounded in-memory history uses generated form IDs and URL origins only, excludes paths, queries and fragments, expires after 90 seconds, and resets on navigation. It does not verify that a network transfer completed or observe hidden agent tool calls.
+
 All processing is performed locally on the user's hardware. The extension does not transmit browsing data, keystrokes, or website content to any external servers or public APIs.
 
 Data Storage

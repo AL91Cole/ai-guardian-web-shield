@@ -8,6 +8,48 @@ AI Guardian Web Shield follows a local-first design philosophy, meaning analysis
 
 Risk scores are intended to provide guidance and awareness. They do not guarantee that a page is safe or unsafe.
 
+## New in 1.1.0: connected form actions
+
+Guardian now combines sign-in field metadata, interactions with the same form,
+the effective submission destination, and the intended submission method.
+Warnings explain the connected actions and show whether an attempt was paused
+or allowed to continue.
+
+| Observed combination | New behavior |
+| --- | --- |
+| Sign-in field + GET submission | Warn: credentials could appear in a URL |
+| Sign-in field + HTTP destination | Warn: the connection is not encrypted |
+| Sign-in field interaction + changed external origin + submission | Warn: the destination changed |
+| Sign-in field + external destination with other address warning signs | Warn: multiple signals agree |
+| Ordinary HTTPS POST, including an external identity provider | No warning from cross-origin submission alone |
+
+The new evidence is held in memory for up to 90 seconds, with at most 64 events
+and 8 findings. It uses generated form IDs and origins only. It does not read
+field values or retain URL paths, queries, fragments, keystrokes, or request
+bodies in the new behavior history. Navigation resets that history. Existing
+page reports still include the current page URL as before.
+
+**Visibility:** this extension checks browser-visible forms on the page where
+it has been activated. It cannot observe hidden AI-agent tool calls, JavaScript
+credential reads, arbitrary fetch/XHR or native `form.submit()` calls, cross-page
+redirect chains, or cross-origin frames. An attempted or continued submission
+is not proof of a completed transfer. Page scripts can change or cancel actions
+after an observed event, so this is guidance rather than a complete exfiltration
+firewall. No new browser permissions are requested.
+
+### Check the update
+
+Run `node --test tests/*.test.js` with Node.js 22 or newer. The tests cover normal
+sign-ins, joined warning signals, form isolation, submission overrides,
+single-use approval, expiry, and metadata privacy.
+
+For a manual Chrome check, load the extension using the Developer Mode steps
+below. From the repository directory run `python3 -m http.server 8000`, open
+`http://localhost:8000/tests/manual/behavior-forms.html`, activate Guardian on
+that tab, and follow the fixture instructions. This fixture cancels all form
+submissions; use invented values only. Automated Node tests do not replace a
+Chrome extension smoke test.
+
 ---
 
 # AI Guardian Web Shield is designed around three principles:
