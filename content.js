@@ -818,7 +818,6 @@
     createAssistantUi();
     attachMessageHandler();
     attachPageListeners();
-    attachStorageHandler();
     patchHistoryForSpaNavigation();
     await loadSettings();
     applyUiSettings();
@@ -827,43 +826,14 @@
 
   async function loadSettings() {
     try {
-      const storedSettings = await chrome.storage.local.get(Object.keys(DEFAULT_SETTINGS));
-      state.settings = {
-        ...DEFAULT_SETTINGS,
-        ...storedSettings
-      };
+      const response = await chrome.runtime.sendMessage({ type: "GET_CONTENT_SETTINGS" });
+      if (!response?.ok) throw new Error("Settings unavailable");
+      state.settings = { ...DEFAULT_SETTINGS, ...response.settings };
     } catch (error) {
       state.settings = {
         ...DEFAULT_SETTINGS
       };
     }
-  }
-
-  function attachStorageHandler() {
-    chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName !== "local") {
-        return;
-      }
-
-      let didUpdateSettings = false;
-
-      Object.keys(DEFAULT_SETTINGS).forEach((key) => {
-        if (typeof changes[key] !== "undefined") {
-          state.settings[key] = changes[key].newValue;
-          didUpdateSettings = true;
-        }
-      });
-
-      if (!didUpdateSettings) {
-        return;
-      }
-
-      applyUiSettings();
-      analyzePage({
-        forceRefresh: true,
-        showPageWarnings: false
-      });
-    });
   }
 
   function applyUiSettings() {
@@ -1007,6 +977,16 @@
 
   function attachMessageHandler() {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (sender?.id !== chrome.runtime.id || !message || typeof message !== "object") return;
+      if (message.type === "CONTENT_SETTINGS_UPDATE") {
+        // tabs.sendMessage comes from a privileged extension context; worker URLs may be absent.
+        if (sender.tab) return;
+        state.settings = { ...DEFAULT_SETTINGS, ...message.settings };
+        applyUiSettings();
+        analyzePage({ forceRefresh: true, showPageWarnings: false });
+        sendResponse({ ok: true });
+        return;
+      }
       if (message.type === "PING_AI_GUARDIAN") {
         sendResponse({ ok: true });
         return;
@@ -7278,3 +7258,4 @@
     }
   };
 })();
+

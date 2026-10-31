@@ -28,5 +28,9 @@
   },
   "side_panel": {
     "default_path": "sidepanel.html"
+  },
+  "minimum_chrome_version": "114",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'"
   }
 }
