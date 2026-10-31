@@ -56,13 +56,104 @@ const PROTECTED_KEYS = new Set([
 ]);
 const tabGuardianState = new Map();
 
-void ensureDefaultSettings();
+// Content scripts must never read passcode records or write unlock deadlines.
+const settingsReady = ensureDefaultSettings();
+// Mark rejection handled; each request still awaits the original promise and fails closed.
+void settingsReady.catch(() => {});
+let settingsMutationQueue = Promise.resolve();
 
 chrome.runtime.onInstalled.addListener(() => {
-  void ensureDefaultSettings();
+  void settingsReady.catch(() => {});
 });
 
+const CONTENT_COMMANDS = new Set([
+  "GET_CONTENT_SETTINGS", "PAGE_REPORT_UPDATE", "OPEN_DETAILS_PANEL",
+  "REPORT_GUARDIAN_ACTIVITY", "TAB_UI_STATE_UPDATE", "CLEAR_TAB_PAGE_STATE"
+]);
+const MUTATION_COMMANDS = new Set([
+  "SET_FAMILY_PROTECTION_PASSCODE", "UNLOCK_FAMILY_PROTECTION", "UPDATE_SETTING_GUARDED"
+]);
+
+function isTrustedUiSender(sender) {
+  return sender?.id === chrome.runtime.id && !sender.tab && ["popup.html", "sidepanel.html"]
+    .some((path) => sender.url === chrome.runtime.getURL(path));
+}
+
+function isContentSender(sender) {
+  if (sender?.id !== chrome.runtime.id || !Number.isInteger(sender.tab?.id) ||
+      sender.tab.id < 0 || sender.frameId !== 0) return false;
+  try {
+    return ["http:", "https:"].includes(new URL(sender.url).protocol);
+  } catch { return false; }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message || typeof message !== "object" || Array.isArray(message) ||
+      typeof message.type !== "string" ||
+      (!isTrustedUiSender(sender) &&
+       !(isContentSender(sender) && CONTENT_COMMANDS.has(message.type)))) {
+    sendResponse({ ok: false, message: "This request is not permitted." });
+    return;
+  }
+
+  // Preserve the click's user activation for Chrome's side-panel API.
+  if (message.type === "OPEN_DETAILS_PANEL") {
+    return handleAuthorizedMessage(message, sender, sendResponse);
+  }
+
+  const run = async () => {
+    try {
+      await settingsReady;
+      await new Promise((resolve) => {
+        const reply = (response) => {
+          try { sendResponse(response); } catch { /* The popup may have closed. */ }
+          resolve();
+        };
+        if (handleAuthorizedMessage(message, sender, reply) !== true) resolve();
+      });
+    } catch {
+      sendResponse({ ok: false, message: "Protected settings are unavailable." });
+    }
+  };
+  if (MUTATION_COMMANDS.has(message.type)) {
+    // Prevent concurrent attempts from bypassing the failed-passcode counter.
+    settingsMutationQueue = settingsMutationQueue.then(run, run);
+  } else {
+    void run();
+  }
+  return true;
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !Object.keys(changes).some((key) =>
+    Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, key))) return;
+  void broadcastContentSettings();
+});
+
+async function getContentSettings() {
+  const settings = await getStoredSettings();
+  // A page does not need the personal note or trusted-adult review preference.
+  delete settings.trustedAdultContact;
+  delete settings.trustedAdultAlertEnabled;
+  return settings;
+}
+
+async function broadcastContentSettings() {
+  try {
+    await settingsReady;
+    const settings = await getContentSettings();
+    const tabs = await chrome.tabs.query({});
+    await Promise.allSettled(tabs.filter((tab) => Number.isInteger(tab.id)).map((tab) =>
+      chrome.tabs.sendMessage(tab.id, { type: "CONTENT_SETTINGS_UPDATE", settings }, { frameId: 0 })));
+  } catch { /* Closed or ungranted tabs do not receive updates. */ }
+}
+
+function handleAuthorizedMessage(message, sender, sendResponse) {
+  if (message.type === "GET_CONTENT_SETTINGS") {
+    void getContentSettings().then((settings) => sendResponse({ ok: true, settings }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
   if (message.type === "PAGE_REPORT_UPDATE") {
     handlePageReportUpdate(message.report, sender.tab);
     sendResponse({ ok: true });
@@ -86,7 +177,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "OPEN_DETAILS_PANEL") {
-    const targetTab = message.tabId
+    const targetTab = isTrustedUiSender(sender) && message.tabId
       ? {
           id: message.tabId,
           windowId: message.windowId
@@ -195,7 +286,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: true });
     return;
   }
-});
+  sendResponse({ ok: false, message: "Unknown request." });
+}
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   clearTabState(tabId);
@@ -215,8 +307,9 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 });
 
 async function ensureDefaultSettings() {
+  await chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
   const keys = Object.keys(DEFAULT_SETTINGS);
-  const storedSettings = await chrome.storage.local.get(keys);
+  const storedSettings = await chrome.storage.local.get([...keys, FAMILY_SETTINGS_HISTORY_KEY]);
   const missingSettings = {};
 
   keys.forEach((key) => {
@@ -227,6 +320,18 @@ async function ensureDefaultSettings() {
 
   if (Object.keys(missingSettings).length > 0) {
     await chrome.storage.local.set(missingSettings);
+  }
+  if (Array.isArray(storedSettings[FAMILY_SETTINGS_HISTORY_KEY])) {
+    const history = storedSettings[FAMILY_SETTINGS_HISTORY_KEY]
+      .filter((entry) => entry && typeof entry === "object")
+      .slice(0, SETTINGS_HISTORY_LIMIT)
+      .map((entry) => ({
+        ...entry,
+        trustedAdultContact: "",
+        ...(entry.key === "trustedAdultContact"
+          ? { fromValue: "Review note changed", toValue: "Review note changed" } : {})
+      }));
+    await chrome.storage.local.set({ [FAMILY_SETTINGS_HISTORY_KEY]: history });
   }
 }
 
@@ -365,8 +470,29 @@ async function unlockFamilyProtection(passcode) {
   };
 }
 
+function isValidSetting(key, value) {
+  if (!Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, key)) return false;
+  if (typeof DEFAULT_SETTINGS[key] === "boolean") {
+    return typeof value === "boolean" && (key !== "localOnlyMode" || value === true);
+  }
+  if (key === "protectionLevel") return PROTECTION_LEVEL_ORDER.includes(value);
+  if (key === "protectionStyle") return ["balanced", "calmer", "watchful"].includes(value);
+  if (key === "accessibilityProfile") {
+    return ["general", "reading", "vision", "hearing", "calm", "focus", "older"].includes(value);
+  }
+  if (key === "familyProtectionExceptions") {
+    return Array.isArray(value) && value.length <= 100 && value.every((host) =>
+      typeof host === "string" && host.length <= 253 &&
+      /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i.test(host) &&
+      !host.includes("..") && host.split(".").every((part) => part.length <= 63 &&
+        !part.startsWith("-") && !part.endsWith("-")));
+  }
+  return key === "trustedAdultContact" && typeof value === "string" &&
+    value.length <= 200 && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
 async function updateSettingGuarded(key, value) {
-  if (!Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, key)) {
+  if (!isValidSetting(key, value)) {
     return {
       ok: false,
       locked: false,
@@ -441,7 +567,7 @@ async function updateSettingGuarded(key, value) {
       toValue: describeSettingValue(key, value),
       trustedAdultAlert:
         isMajorSafetyChange(key, currentSettings[key], value) && Boolean(updatedSettings.trustedAdultAlertEnabled),
-      trustedAdultContact: updatedSettings.trustedAdultContact || "",
+      trustedAdultContact: "",
       note: buildHistoryNote(key, currentSettings[key], value, updatedSettings)
     });
   }
@@ -576,6 +702,9 @@ async function recordSettingsHistory(entry) {
 }
 
 function describeSettingValue(key, value) {
+  if (key === "trustedAdultContact") {
+    return value ? "Review note set" : "No review note";
+  }
   if (key === "protectionLevel") {
     return value ? getProtectionLevelLabel(value) : "Not set";
   }
@@ -1042,10 +1171,10 @@ function getGuardianTabState(tabId) {
 
 function pruneGuardianActivity(activityState, now) {
   const cutoffTime = now - GUARDIAN_ACTIVITY_WINDOW_MS;
-  activityState.pageVisits = activityState.pageVisits.filter((item) => item.time >= cutoffTime);
-  activityState.riskyActions = activityState.riskyActions.filter((item) => item.time >= cutoffTime);
-  activityState.warningDismissals = activityState.warningDismissals.filter((item) => item.time >= cutoffTime);
-  activityState.warningContinues = activityState.warningContinues.filter((item) => item.time >= cutoffTime);
+  activityState.pageVisits = activityState.pageVisits.filter((item) => item.time >= cutoffTime).slice(-64);
+  activityState.riskyActions = activityState.riskyActions.filter((item) => item.time >= cutoffTime).slice(-64);
+  activityState.warningDismissals = activityState.warningDismissals.filter((item) => item.time >= cutoffTime).slice(-64);
+  activityState.warningContinues = activityState.warningContinues.filter((item) => item.time >= cutoffTime).slice(-64);
 }
 
 async function maybePromptGuardianSlowdown(tabId, activityState) {
@@ -1163,3 +1292,4 @@ function getBadgeColor(score) {
 
   return "#72a978";
 }
+

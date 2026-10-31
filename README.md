@@ -345,6 +345,8 @@ chrome://extensions
 
 AI Guardian Web Shield is designed to minimize data exposure.
 
+The current extension performs its analysis locally and has no telemetry or remote policy sync. Passcode records and personal review notes are restricted to the packaged extension controls. Content scripts receive read-only analysis preferences. See [Privacy Policy](Privacy%20Policy) for retained data and deletion, and [SECURITY.md](SECURITY.md) for trust boundaries and release checks. The local passcode is a convenience lock, not device-management enforcement or encryption.
+
 Key principles:
 
 • analysis occurs locally whenever possible  
@@ -397,3 +399,4 @@ Conceptual connections include:
 # License
 
 MIT License
+
