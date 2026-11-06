@@ -30,12 +30,16 @@ const keyPath = path.join(work, "key.pem");
 const certPath = path.join(work, "cert.pem");
 execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", keyPath, "-out", certPath, "-days", "1",
   "-subj", "/CN=localhost", "-addext", `subjectAltName=${["DNS:localhost", ...HOSTS.map((h) => `DNS:${h}`)].join(",")}`], { stdio: "ignore" });
-const fixtures = path.join(here, "fixtures");
+// Fixture bodies are read once into memory; the request URL only selects a key.
+const fixturesDir = path.join(here, "fixtures");
+const fixtureBodies = new Map(fs.readdirSync(fixturesDir)
+  .filter((name) => name.endsWith(".html"))
+  .map((name) => [name, fs.readFileSync(path.join(fixturesDir, name))]));
 const server = https.createServer({ key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) }, (req, res) => {
-  const name = (req.url.split("?")[0].replace(/^\/+/, "") || "safe.html").replace(/[^a-z0-9._-]/gi, "");
-  const file = path.join(fixtures, fs.existsSync(path.join(fixtures, name)) ? name : "safe.html");
+  const requested = path.posix.basename(String(req.url || "").split("?")[0]);
+  const body = fixtureBodies.get(requested) || fixtureBodies.get("safe.html");
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-  res.end(fs.readFileSync(file));
+  res.end(body);
 });
 await new Promise((resolve) => server.listen(PORT, resolve));
 const base = (host) => `https://${host}:${PORT}`;
@@ -73,7 +77,9 @@ const tabIdFor = (page) => worker.evaluate(async (url) => (await chrome.tabs.que
 async function scan(page) {
   const tabId = await tabIdFor(page);
   await worker.evaluate(({ tabId, files }) => chrome.scripting.executeScript({ target: { tabId }, files }), { tabId, files: PAGE_SCRIPTS });
-  await worker.evaluate(({ tabId, src }) => chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", func: new Function(`return (${src})()`) }), { tabId, src: HOOK_SOURCE }).catch(() => {});
+  // The hook is the extension's own function; Playwright evaluates its source
+  // in the worker, which hands it to executeScript as a function reference.
+  await worker.evaluate(`chrome.scripting.executeScript({ target: { tabId: ${tabId} }, world: "MAIN", func: ${HOOK_SOURCE} })`).catch(() => {});
   await page.waitForTimeout(600);
   return tabId;
 }
