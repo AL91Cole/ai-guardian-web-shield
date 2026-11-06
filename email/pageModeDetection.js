@@ -150,10 +150,13 @@
       return "compose";
     }
 
+    // A message body with several links is an opened message that happens to
+    // carry an attachment, not a dedicated attachment viewer.
     if (
       modeSignals.attachmentViewCount > 0 &&
       modeSignals.rowCount < 2 &&
-      (modeSignals.visibleAttachmentCount > 0 || modeSignals.visibleLinkCount <= 2)
+      (modeSignals.visibleAttachmentCount > 0 || modeSignals.visibleLinkCount <= 2) &&
+      !(modeSignals.messageScopeCount > 0 && modeSignals.visibleLinkCount > 2)
     ) {
       return "attachment_view";
     }

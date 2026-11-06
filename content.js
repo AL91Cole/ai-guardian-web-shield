@@ -11,6 +11,12 @@
     return;
   }
 
+  if (!globalThis.AI_GUARDIAN_BEHAVIOR_MONITOR || !globalThis.AI_GUARDIAN_BEHAVIOR) {
+    // Leave the loaded flag unset so a complete injection can still succeed later.
+    console.warn("AI Guardian Web Shield: behavior modules must load before content.js.");
+    return;
+  }
+
   window.aiGuardianWebShieldLoaded = true;
 
   const PUSHY_PHRASES = [
@@ -762,6 +768,7 @@
     walletRecoveryBait: 90,
     fakeSuspensionSignIn: 76,
     threeModerateSignals: 45,
+    brandBaitLink: 40,
     oneStrongSignal: 60,
     twoStrongSignals: 78
   });
@@ -803,6 +810,7 @@
     familyLearnMoreButton: null,
     banner: null,
     indicatorCollapsed: true,
+    indicatorUserCollapsed: false,
     activeDecisionOptions: null,
     activeFamilyRestriction: null,
     root: null,
@@ -818,7 +826,6 @@
     createAssistantUi();
     attachMessageHandler();
     attachPageListeners();
-    patchHistoryForSpaNavigation();
     await loadSettings();
     applyUiSettings();
     analyzePage({ forceRefresh: true, showPageWarnings: false });
@@ -1017,6 +1024,9 @@
     document.addEventListener("input", observeCredentialInteraction, true);
     window.addEventListener("hashchange", handleLocationMaybeChanged);
     window.addEventListener("popstate", handleLocationMaybeChanged);
+    // Fired by the main-world history hook installed at injection time. The event
+    // is untrusted and carries nothing; the handler only re-reads location.href.
+    document.addEventListener("agws:route-change", handleLocationMaybeChanged);
 
     const observer = new MutationObserver((mutations) => {
       const hasRealPageChange = mutations.some((mutation) => !isAssistantMutation(mutation));
@@ -1065,56 +1075,13 @@
       node.closest("#ai-guardian-modal-root") ||
       node.id === "ai-guardian-family-root" ||
       node.closest("#ai-guardian-family-root") ||
-      isInsideOwnEmailCueSlot(node)
+      // Only cue slots this injection created count; the class names are copyable.
+      Boolean(getEmailFeatureModule()?.emailUiInjector?.isOwnSlot?.(node))
     ) {
       return true;
     }
 
     return Boolean(node.closest(".ai-guardian-gsr-slot, .ai-guardian-gsr-badge-wrap"));
-  }
-
-  // Mail cue markup lives in the page DOM, so the static class names and
-  // data-agws-* attributes can be copied by a page or an HTML email. A node only
-  // counts as assistant output when the email injector created its slot and the
-  // slot carries the token generated for this load. Anything else is a real page
-  // change and is re-analyzed.
-  function isInsideOwnEmailCueSlot(node) {
-    const injector = window.AI_GUARDIAN_EMAIL?.emailUiInjector;
-
-    if (
-      !(node instanceof Element) ||
-      typeof injector?.isOwnSlot !== "function" ||
-      typeof injector?.getOwnershipToken !== "function"
-    ) {
-      return false;
-    }
-
-    const cueSlot = node.closest(".ai-guardian-mail-cue-slot");
-
-    if (!(cueSlot instanceof Element) || !injector.isOwnSlot(cueSlot)) {
-      return false;
-    }
-
-    const token = injector.getOwnershipToken();
-
-    return typeof token === "string" && token.length > 0 && cueSlot.getAttribute("data-agws-token") === token;
-  }
-
-  function patchHistoryForSpaNavigation() {
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    history.pushState = function (...args) {
-      const result = originalPushState.apply(this, args);
-      handleLocationMaybeChanged();
-      return result;
-    };
-
-    history.replaceState = function (...args) {
-      const result = originalReplaceState.apply(this, args);
-      handleLocationMaybeChanged();
-      return result;
-    };
   }
 
   function handleLocationMaybeChanged() {
@@ -1143,6 +1110,7 @@
     hidePageBanner();
     hideFamilyProtectionBlock();
     getEmailSafetyController()?.handleNavigationReset?.(location.href);
+    state.indicatorUserCollapsed = false;
     setFloatingIndicatorCollapsed(true);
     showPendingFloatingIndicator();
     clearTabPageStateInBackground();
@@ -1150,11 +1118,23 @@
     cleanupExpiredNavigationApprovals();
   }
 
+  const ANALYSIS_MAX_WAIT_MS = 6000;
+  let analysisFirstRequestedAt = 0;
+
   function scheduleAnalysis(delayMs = 1200) {
+    const now = Date.now();
+
+    if (!analysisFirstRequestedAt) {
+      analysisFirstRequestedAt = now;
+    }
+
+    // A page that mutates every second (countdowns, feeds) must not starve analysis.
+    const waitMs = Math.max(0, Math.min(delayMs, analysisFirstRequestedAt + ANALYSIS_MAX_WAIT_MS - now));
     window.clearTimeout(state.refreshTimer);
     state.refreshTimer = window.setTimeout(() => {
+      analysisFirstRequestedAt = 0;
       analyzePage({ showPageWarnings: false });
-    }, delayMs);
+    }, waitMs);
   }
 
   function analyzePage(options = {}) {
@@ -1436,7 +1416,7 @@
       }
     }
 
-    if (pageSignals.passwordFieldCount > 0 && pageSignals.pushyPhraseCount > 0) {
+    if (pageSignals.passwordFieldCount > 0 && pageSignals.pushyPhraseCount >= 2) {
       score += SIGNAL_WEIGHTS.moderate.normal;
       signalCounts.strong += 1;
       addReasonEntry(reasonEntries, "A password box and pushy words together need extra care.", SIGNAL_WEIGHTS.strong.light);
@@ -2293,11 +2273,20 @@
         score -= 10;
       }
 
+      // The sign-in score cap is earned by a known provider, a trusted or
+      // education host, or the site you are already on. A bare "login." or
+      // "sso." prefix on an unknown external host is not enough: anyone can
+      // register one.
+      const trustedAuthCapAllowed =
+        trustedAuthFlow.isTrustedAuthFlow &&
+        (Boolean(trustedAuthFlow.brand) || trusted || isEduDomain ||
+          (Boolean(context.currentRootDomain) && rootDomain === context.currentRootDomain));
+
       score = applyRiskGuardrails(score, signalCounts, {
         trusted,
         isEduDomain,
         sameSiteLevel,
-        trustedAuthFlow: trustedAuthFlow.isTrustedAuthFlow
+        trustedAuthFlow: trustedAuthCapAllowed
       });
       score = applyUrlScoreFloors(score, {
         localKnownRiskMatch,
@@ -2398,10 +2387,16 @@
       score += SIGNAL_WEIGHTS.strong.normal;
       signalCounts.strong += 1;
       addReasonEntry(reasonEntries, mismatch.reason, SIGNAL_WEIGHTS.strong.normal);
+      // A label that spells out one address while the link opens another is a
+      // classic phishing tell; it must reach the band where clicks are paused.
+      score = Math.max(score, SCORE_FLOORS.oneStrongSignal);
     } else if (mismatch.level === "second-look") {
       score += SIGNAL_WEIGHTS.moderate.light;
       signalCounts.moderate += 1;
       addReasonEntry(reasonEntries, mismatch.reason, SIGNAL_WEIGHTS.moderate.light);
+      // "Confirm your PayPal account" pointing at an unknown host should never
+      // wear a green "Looks normal" cue, even when the address itself is quiet.
+      score = Math.max(score, SCORE_FLOORS.brandBaitLink);
     }
 
     score = applyRiskGuardrails(score, signalCounts, {
@@ -2419,6 +2414,9 @@
       label: bandDetails.label,
       reasons: getTopReasonTexts(reasonEntries, 3),
       reasonEntries: cloneReasonEntries(reasonEntries),
+      // Report the link's own counts, not the bare address's, so guided-mode
+      // decisions see the label mismatch.
+      signalCounts,
       mismatchLevel: mismatch.level,
       text: linkText
     };
@@ -2530,9 +2528,17 @@
       .trim();
   }
 
+  const NON_DOMAIN_LABEL_SUFFIXES = new Set(["js", "ts", "css", "py", "rb", "go", "rs", "md", "txt", "pdf", "zip", "exe", "json"]);
+
   function extractVisibleDomain(text) {
     const match = text.match(/([a-z0-9-]+\.)+[a-z]{2,}/i);
-    return match ? match[0].toLowerCase() : "";
+
+    if (!match) {
+      return "";
+    }
+
+    const candidate = match[0].toLowerCase();
+    return NON_DOMAIN_LABEL_SUFFIXES.has(candidate.split(".").pop()) ? "" : candidate;
   }
 
   function looksLikeExplicitUrlLabel(text, visibleDomain) {
@@ -2549,7 +2555,7 @@
 
   function findActionBrandInText(text) {
     return BRAND_RULES.find((rule) => {
-      const mentionsBrand = text.includes(rule.brand);
+      const mentionsBrand = findBrandWordIndex(text, rule.brand) >= 0;
       const mentionsAction = ACTION_PROMPT_WORDS.some((word) => text.includes(word));
 
       return mentionsBrand && mentionsAction;
@@ -3258,7 +3264,7 @@
       return;
     }
 
-    const anchor = event.target.closest("a[href]");
+    const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
 
     if (!anchor || anchor.closest("#ai-guardian-root")) {
       return;
@@ -3289,10 +3295,11 @@
     const warningKey = navigationIntent?.warningKey || buildNavigationWarningKey(resolvedUrl);
     const emailAuthFlowHandler = getEmailAuthFlowHandler();
 
+    // A recent warning is not approval. Only an explicit "Continue" or a
+    // trusted sign-in allowance lets the click through without a dialog.
     if (
       isNavigationApproved(warningKey) ||
       state.shownWarningKeys.has(warningKey) ||
-      emailAuthFlowHandler?.isRecentlyWarned?.(resolvedUrl) ||
       emailAuthFlowHandler?.isAllowOnceTarget?.(resolvedUrl)
     ) {
       return;
@@ -3784,6 +3791,11 @@
     });
     hideDecisionDialog();
 
+    if (options?.warningKey) {
+      // Going back is not approval: warn again on the next attempt.
+      state.shownWarningKeys.delete(options.warningKey);
+    }
+
     if (typeof options?.onStay === "function") {
       options.onStay();
     }
@@ -3885,6 +3897,10 @@
   }
 
   function createAssistantUi() {
+    ["ai-guardian-root", "ai-guardian-modal-root", "ai-guardian-family-root"].forEach((staleId) => {
+      document.getElementById(staleId)?.remove();
+    });
+
     const root = document.createElement("div");
     root.id = "ai-guardian-root";
     const modalRoot = document.createElement("div");
@@ -4223,6 +4239,14 @@
     );
 
     state.indicator.hidden = !state.settings.floatingBadgeEnabled;
+
+    // A collapsed badge is just a small icon; a high or risk score should be
+    // readable without a click unless the person hid it on purpose.
+    if ((report.band === "high" || report.band === "risk") && state.indicatorCollapsed && !state.indicatorUserCollapsed) {
+      state.indicatorCollapsed = false;
+      sendTabUiStateToBackground();
+    }
+
     syncFloatingIndicatorState();
   }
 
@@ -4247,6 +4271,8 @@
 
   function toggleFloatingIndicatorCollapsed() {
     setFloatingIndicatorCollapsed(!state.indicatorCollapsed);
+    // Remember a deliberate "Hide" so a risky score does not pop it open again.
+    state.indicatorUserCollapsed = state.indicatorCollapsed;
   }
 
   function setFloatingIndicatorCollapsed(isCollapsed) {
@@ -4876,6 +4902,8 @@
   }
 
   document.addEventListener("agws:email-controller-ready", initializeEmailSafetyController);
+  // Deps are published at the end of this script; defer so an already loaded controller sees them.
+  window.setTimeout(initializeEmailSafetyController, 0);
 
   function clearWebmailPreviews() {
     getEmailSafetyController()?.clearPreviews?.();
@@ -5415,7 +5443,8 @@
 
     scopes.forEach((scope) => {
       scope.querySelectorAll("a[href], button[formaction], button[data-url], [role='button'][data-url]").forEach((element) => {
-        if (!(element instanceof HTMLElement) || isInsideOwnEmailCueSlot(element)) {
+        // Only cue slots this injection created hide their contents from the count.
+        if (!(element instanceof HTMLElement) || getEmailFeatureModule()?.emailUiInjector?.isOwnSlot?.(element)) {
           return;
         }
 
@@ -6001,8 +6030,11 @@
   function unwrapGoogleRedirect(urlString) {
     try {
       const parsedUrl = new URL(urlString, location.href);
+      const host = normalizeHost(parsedUrl.hostname);
+      const isGoogleRedirect = parsedUrl.pathname === "/url" &&
+        (isOfficialHostForBrand(host, "google") || /^google\.[a-z.]+$/.test(host));
 
-      if (!parsedUrl.hostname.includes("google.")) {
+      if (!isGoogleRedirect) {
         return parsedUrl.toString();
       }
 
@@ -6080,16 +6112,26 @@
     });
   }
 
+  function findBrandWordIndex(text, brand) {
+    if (!brand) {
+      return -1;
+    }
+
+    const match = new RegExp(`(?:^|[^a-z0-9])(${brand})(?![a-z0-9])`, "i").exec(text || "");
+    return match ? match.index + match[0].indexOf(match[1]) : -1;
+  }
+
   function findBrandMention(text) {
     const normalizedText = (text || "").toLowerCase();
-    const matchedRule = BRAND_RULES.find((rule) => normalizedText.includes(rule.brand));
+    const matchedRule = BRAND_RULES.find((rule) => findBrandWordIndex(normalizedText, rule.brand) >= 0);
     return matchedRule ? matchedRule.brand : "";
   }
 
   function isStrongBrandClaim(text, brand) {
     const normalizedText = String(text || "").toLowerCase();
+    const brandIndex = findBrandWordIndex(normalizedText, brand);
 
-    if (!brand || !normalizedText.includes(brand)) {
+    if (brandIndex < 0) {
       return false;
     }
 
@@ -6107,7 +6149,6 @@
     ];
 
     return identityClaimHints.some((hint) => {
-      const brandIndex = normalizedText.indexOf(brand);
       const hintIndex = normalizedText.indexOf(hint);
 
       return hintIndex >= 0 && Math.abs(hintIndex - brandIndex) <= 40;
@@ -6128,8 +6169,14 @@
       }
 
       const compactLabel = normalizedLabel.replace(/-/g, "");
+      const registrableLabel = (getRootDomain(hostname).split(".")[0] || "").toLowerCase();
 
-      if (isSingleEditAway(compactLabel, rule.brand)) {
+      if (registrableLabel === rule.brand && compactLabel === rule.brand) {
+        // google.de, amazon.fr, paypal.me: the brand's own name on another suffix.
+        continue;
+      }
+
+      if (rule.brand.length >= 6 && isSingleEditAway(compactLabel, rule.brand)) {
         return rule.brand;
       }
 

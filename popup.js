@@ -26,23 +26,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   trustedAdultContact: ""
 });
 
-const PAGE_SCRIPT_FILES = Object.freeze([
-  "shared/behaviorCorrelation.js",
-  "shared/behaviorMonitor.js",
-  "content.js",
-  "shared/debounce.js",
-  "shared/domUtils.js",
-  "shared/urlUtils.js",
-  "email/emailState.js",
-  "email/providerDetection.js",
-  "email/emailHeuristics.js",
-  "email/inboxRowScanner.js",
-  "email/messageLinkScanner.js",
-  "email/pageModeDetection.js",
-  "email/authFlowHandler.js",
-  "email/emailUiInjector.js",
-  "email/emailSafetyController.js"
-]);
+const PAGE_SCRIPT_FILES = globalThis.AI_GUARDIAN_PAGE_SCRIPT_FILES;
 
 const PROTECTION_LEVEL_COPY = {
   standard: "Standard Protection keeps everyday guidance balanced.",
@@ -773,10 +757,30 @@ async function finishOnboardingGuide(skipped) {
   if (!skipped) {
     const onboardingPresetSettings =
       ONBOARDING_PROTECTION_PRESET_SETTINGS[preset] || ONBOARDING_PROTECTION_PRESET_SETTINGS.standard;
-    await updateSetting("protectionLevel", onboardingPresetSettings.protectionLevel);
-    await updateSetting("guidedProtectionModeEnabled", onboardingPresetSettings.guidedProtectionModeEnabled);
+    const protectedChoices = [
+      ["protectionLevel", onboardingPresetSettings.protectionLevel],
+      ["guidedProtectionModeEnabled", onboardingPresetSettings.guidedProtectionModeEnabled],
+      ["adultSiteBlockingEnabled", onboardingPresetSettings.adultSiteBlockingEnabled]
+    ];
+
+    for (const [key, value] of protectedChoices) {
+      if (currentSettings[key] === value) {
+        continue;
+      }
+
+      const response = await updateSetting(key, value);
+
+      if (!response || !response.ok) {
+        // Keep the guide open so the person sees why the choice did not apply.
+        if (onboardingStepBody) {
+          onboardingStepBody.textContent =
+            response?.message || "That protection choice is locked right now. Unlock Family Protection below, then finish the guide.";
+        }
+        return;
+      }
+    }
+
     await updateSetting("protectionStyle", onboardingPresetSettings.protectionStyle);
-    await updateSetting("adultSiteBlockingEnabled", onboardingPresetSettings.adultSiteBlockingEnabled);
     await updateSetting("accessibilityProfile", nextAccessibilityProfile);
     await updateSetting("extraSimpleLanguageEnabled", nextExtraSimple);
   }
@@ -1077,7 +1081,11 @@ function handleSidePanelTabChanged() {
   void loadReport(false);
 }
 
-function handleSidePanelTabUpdated(tabId, changeInfo) {
+function handleSidePanelTabUpdated(tabId, changeInfo, tab) {
+  if (tab && !tab.active) {
+    return;
+  }
+
   if (changeInfo.status === "loading" || typeof changeInfo.url === "string") {
     void loadReport(false);
   }
@@ -1148,7 +1156,8 @@ async function loadReport(forceRefresh) {
 
     if (!report && !isScannableTab(tab)) {
       renderReport(buildUnavailableReport({
-        reason: "unsupported-page",
+        // Without activeTab access Chrome hides the URL entirely.
+        reason: tab.url ? "unsupported-page" : "needs-activation",
         tab
       }));
       return;
@@ -1318,9 +1327,33 @@ async function ensurePageScriptsInjected(tabId) {
       },
       files: PAGE_SCRIPT_FILES
     });
-    return true;
   } catch (error) {
     return false;
+  }
+
+  await installMainWorldRouteHook(tabId);
+  return true;
+}
+
+// Single-page apps change the URL through the page's own history object, which
+// the isolated world cannot see. A tiny main-world hook announces those changes.
+async function installMainWorldRouteHook(tabId) {
+  const hook = globalThis.AI_GUARDIAN_MAIN_WORLD_ROUTE_HOOK;
+
+  if (typeof hook !== "function") {
+    return;
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: {
+        tabId
+      },
+      world: "MAIN",
+      func: hook
+    });
+  } catch (error) {
+    // Pages that forbid main-world scripts still get the mutation-observer fallback.
   }
 }
 
@@ -1857,9 +1890,20 @@ function getHostFromUrl(urlString) {
 }
 
 function getUnavailableState(reason) {
+  if (reason === "needs-activation") {
+    return {
+      summary: "AI Guardian is not active on this tab yet.",
+      advice: "Click the AI Guardian toolbar icon on this tab to allow a scan here.",
+      reasons: [
+        "The extension only reads pages where you have activated it.",
+        "No page data was sent anywhere else."
+      ]
+    };
+  }
+
   if (reason === "unsupported-page") {
     return {
-      summary: "This kind of page cannot be scanned in the popup.",
+      summary: "This kind of page cannot be scanned here.",
       advice: "Open a normal website page if you want a live page score.",
       reasons: [
         "Browser pages, extension pages, and some special tabs do not share page details with extensions.",

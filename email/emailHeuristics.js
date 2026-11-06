@@ -161,9 +161,22 @@
       : String(value || "").toLowerCase();
   }
 
+  // Phrase lists include non-Latin wording, so normalize with Unicode letter
+  // classes here. An empty normalized phrase would match every row.
+  function normalizePhraseText(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   function countPhraseMatches(text, phrases) {
-    const normalizedText = normalizeText(text);
-    return phrases.filter((phrase) => normalizedText.includes(normalizeText(phrase)));
+    const normalizedText = normalizePhraseText(text);
+    return phrases.filter((phrase) => {
+      const normalizedPhrase = normalizePhraseText(phrase);
+      return normalizedPhrase.length > 0 && normalizedText.includes(normalizedPhrase);
+    });
   }
 
   function buildPhraseCategoryMatches(text) {
@@ -239,8 +252,9 @@
     const claimedBrand = typeof deps.findBrandMention === "function"
       ? deps.findBrandMention(normalizeText(combinedText))
       : "";
-    const senderEmail = senderText.includes("@") ? senderText : "";
-    const senderDomain = senderEmail ? deps.normalizeHost(senderEmail.split("@").pop() || "") : "";
+    const senderEmailMatch = senderText.match(/[a-z0-9._%+-]+@([a-z0-9.-]+\.[a-z]{2,})/i);
+    const senderEmail = senderEmailMatch ? senderEmailMatch[0].toLowerCase() : "";
+    const senderDomain = senderEmailMatch ? deps.normalizeHost(senderEmailMatch[1].toLowerCase()) : "";
     const attachmentHintMatches = MAIL_ATTACHMENT_HINTS.filter((hint) => normalizeText(combinedText).includes(normalizeText(hint)));
     const mailboxContext = getMailboxRiskContext();
     const promoEmojiCount = countPromoEmojiMatches(combinedText);
@@ -599,6 +613,7 @@
     PHISHING_CATEGORY_ORDER,
     MAIL_ATTACHMENT_HINTS,
     getVisibleEmailAddress,
+    countPhraseMatches,
     buildPhraseCategoryMatches,
     buildRowFeatureObject,
     assessInboxRow,

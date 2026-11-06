@@ -1262,3 +1262,8 @@ body.accessibility-reduced-motion *::after {
   transition: none !important;
   scroll-behavior: auto !important;
 }
+
+/* Keep the hidden attribute authoritative over layout display values. */
+[hidden] {
+  display: none !important;
+}

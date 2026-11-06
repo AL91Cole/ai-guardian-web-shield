@@ -57,6 +57,10 @@ function createDom() {
     return String(selector).split(",").map(parseCompound);
   }
 
+  function toDataName(key) {
+    return `data-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+  }
+
   class Element extends Node {
     constructor(tagName) {
       super();
@@ -93,11 +97,6 @@ function createDom() {
       const siblings = this.parentElement.children;
       return siblings[siblings.indexOf(this) + 1] || null;
     }
-    get isConnected() {
-      let current = this;
-      while (current.parentElement) current = current.parentElement;
-      return current.isDocumentRoot === true;
-    }
     appendChild(child) {
       child.remove();
       child.parentElement = this;
@@ -125,7 +124,7 @@ function createDom() {
       this.parentElement = null;
     }
     matchesCompound(parts) {
-      if (parts.tag && parts.tag !== "*" && parts.tag !== this.tagName) return false;
+      if (parts.tag && parts.tag !== this.tagName) return false;
       if (parts.id && parts.id !== this.id) return false;
       if (!parts.classes.every((name) => this.classList.contains(name))) return false;
       if (parts.lastChild && (!this.parentElement || this.parentElement.children.at(-1) !== this)) return false;
@@ -163,12 +162,7 @@ function createDom() {
     get href() { return this.getAttribute("href") || ""; }
   }
 
-  function toDataName(key) {
-    return `data-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
-  }
-
   const documentElement = new HTMLElement("html");
-  documentElement.isDocumentRoot = true;
   const body = documentElement.appendChild(new HTMLElement("body"));
   const document = {
     documentElement,
@@ -177,7 +171,6 @@ function createDom() {
     createElement(tagName) {
       return String(tagName).toLowerCase() === "a" ? new HTMLAnchorElement(tagName) : new HTMLElement(tagName);
     },
-    createTextNode(data) { return new Text(data, null); },
     querySelectorAll(selector) { return documentElement.querySelectorAll(selector); },
     querySelector(selector) { return documentElement.querySelector(selector); }
   };
@@ -259,26 +252,25 @@ function setup() {
   return { dom, context, injector, scanner, messageBody };
 }
 
-test("slots created by the injector are owned and carry the per-load token", () => {
+test("slots created by the injector are owned and carry the per-injection token", () => {
   const { dom, injector, messageBody } = setup();
   const link = dom.el("a", { href: "https://news.example.test/story" });
   messageBody.appendChild(link);
 
   const slot = injector.ensureLinkCueSlot(link);
-  const token = injector.getOwnershipToken();
+  const token = injector.getCueToken();
 
-  assert.match(token, /^[0-9a-f]{32}$/);
-  assert.equal(slot.getAttribute("data-agws-token"), token);
+  assert.match(token, /^[0-9a-f]{24}$/);
+  assert.equal(slot.dataset.agwsToken, token);
   assert.equal(injector.isOwnSlot(slot), true);
   assert.equal(injector.ensureLinkCueSlot(link), slot, "an owned slot is reused");
-  assert.equal(injector.isInsideOwnSlot(slot.firstElementChild || slot), true);
 
   injector.updateCue(slot, "Check first", "Example detail", "caution");
   assert.equal(slot.firstElementChild.textContent, "Check first");
-  assert.equal(injector.isInsideOwnSlot(slot.firstElementChild), true);
+  assert.equal(injector.isOwnSlot(slot.firstElementChild), true, "nodes inside an owned slot count as owned");
 });
 
-test("a page-authored slot with the same class names is not owned, not skipped by the scanner, and not removed", () => {
+test("a page-authored slot with the same class names is neither trusted, skipped by the scanner, nor removed", () => {
   const { dom, injector, scanner, messageBody } = setup();
   const hiddenLink = dom.el("a", { href: "https://login.example-verify.test/reset" });
   const spoofedSlot = makeSpoofedSlot(dom, hiddenLink);
@@ -287,7 +279,8 @@ test("a page-authored slot with the same class names is not owned, not skipped b
   messageBody.appendChild(spoofedSlot);
 
   assert.equal(injector.isOwnSlot(spoofedSlot), false);
-  assert.equal(injector.isInsideOwnSlot(hiddenLink), false);
+  assert.equal(injector.isOwnSlot(spoofedSlot.firstElementChild), false);
+  assert.equal(injector.isOwnSlot(hiddenLink), false);
 
   const scanned = scanner.getVisibleMessageLinks(ENVIRONMENT);
   assert.deepEqual(Array.from(scanned, (element) => element.href), [ordinaryLink.href, hiddenLink.href]);
@@ -306,8 +299,8 @@ test("a page-authored slot with the same class names is not owned, not skipped b
 
   const secondOwnedSlot = injector.ensureLinkCueSlot(ordinaryLink);
   injector.clearPreviews();
-  assert.equal(secondOwnedSlot.parentElement, null);
-  assert.equal(spoofedSlot.parentElement, messageBody);
+  assert.equal(secondOwnedSlot.parentElement, null, "own slots are cleaned up");
+  assert.equal(spoofedSlot.parentElement, messageBody, "page content must not be deleted");
   assert.equal(spoofedSlot.firstElementChild.textContent, "Looks normal");
 });
 
@@ -319,12 +312,12 @@ test("the injector never adopts or edits page-authored slots", () => {
   messageBody.appendChild(spoofedLinkSlot);
 
   const linkSlot = injector.ensureLinkCueSlot(link);
-  assert.notEqual(linkSlot, spoofedLinkSlot);
+  assert.notEqual(linkSlot, spoofedLinkSlot, "a forged slot is not reused");
   assert.equal(injector.isOwnSlot(linkSlot), true);
   assert.equal(link.nextElementSibling, linkSlot);
 
-  injector.updateCue(spoofedLinkSlot, "Check first", "Example detail", "risk");
-  assert.equal(spoofedLinkSlot.firstElementChild.textContent, "Looks normal");
+  injector.updateCue(spoofedLinkSlot, "Spoofed", "detail", "risk");
+  assert.equal(spoofedLinkSlot.firstElementChild.textContent, "Looks normal", "page content must not be rewritten");
   assert.equal(spoofedLinkSlot.firstElementChild.getAttribute("data-tone"), "safe");
 
   const spoofedRowSlot = dom.el("span", {
@@ -348,7 +341,7 @@ test("copying the token onto a page-authored slot does not make it trusted", () 
   const { dom, injector, scanner, messageBody } = setup();
   const hiddenLink = dom.el("a", { href: "https://login.example-verify.test/reset" });
   const spoofedSlot = makeSpoofedSlot(dom, hiddenLink);
-  spoofedSlot.setAttribute("data-agws-token", injector.getOwnershipToken());
+  spoofedSlot.setAttribute("data-agws-token", injector.getCueToken());
   messageBody.appendChild(spoofedSlot);
 
   assert.equal(injector.isOwnSlot(spoofedSlot), false);
@@ -359,10 +352,11 @@ test("copying the token onto a page-authored slot does not make it trusted", () 
   assert.equal(spoofedSlot.parentElement, messageBody);
 });
 
-test("each injection gets its own random token and only trusts its own slots", () => {
+test("the cue token is random per injection and only that injection's slots are trusted", () => {
   const first = setup();
   const second = setup();
-  assert.notEqual(first.injector.getOwnershipToken(), second.injector.getOwnershipToken());
+  assert.match(first.injector.getCueToken(), /^[0-9a-f]{24}$/);
+  assert.notEqual(first.injector.getCueToken(), second.injector.getCueToken());
 
   const link = first.dom.el("a", { href: "https://news.example.test/story" });
   first.messageBody.appendChild(link);
@@ -385,7 +379,7 @@ test("re-injecting the module retires the previous instance's slots", () => {
   assert.notEqual(reloaded, injector);
   assert.equal(staleSlot.parentElement, null, "slots from the previous load are cleared");
   assert.equal(spoofedSlot.parentElement, messageBody, "page-authored markup is still untouched");
-  assert.notEqual(reloaded.getOwnershipToken(), injector.getOwnershipToken());
+  assert.notEqual(reloaded.getCueToken(), injector.getCueToken());
 });
 
 // The content script's mutation filter runs before the email modules load and
@@ -393,8 +387,9 @@ test("re-injecting the module retires the previous instance's slots", () => {
 function loadMutationFilter(context) {
   const source = fs.readFileSync(path.join(__dirname, "..", "content.js"), "utf8");
   const start = source.indexOf("  function isAssistantMutation(mutation) {");
-  const end = source.indexOf("\n  function patchHistoryForSpaNavigation()", start);
+  const end = source.indexOf("\n  function handleLocationMaybeChanged()", start);
   assert.ok(start >= 0 && end > start, "actual content-script mutation filter is available");
+  context.getEmailFeatureModule = () => context.AI_GUARDIAN_EMAIL || null;
   vm.runInContext(source.slice(start, end), context);
   return (mutation) => context.isAssistantMutation({ addedNodes: [], removedNodes: [], ...mutation });
 }
@@ -423,10 +418,11 @@ test("content script only treats mutations inside injector-owned slots as assist
   // The static attributes on their own are not enough either.
   const enhancedLookalike = dom.el("div", { "data-agws-enhanced": "true", "data-agws-feature": "email-preview" });
   messageBody.appendChild(enhancedLookalike);
-  assert.equal(isAssistantMutation({ target: enhancedLookalike, addedNodes: [dom.el("a", { href: "https://x.test/" })] }), false);
+  const lookalikeChild = enhancedLookalike.appendChild(dom.el("a", { href: "https://x.test/" }));
+  assert.equal(isAssistantMutation({ target: enhancedLookalike, addedNodes: [lookalikeChild] }), false);
 
   // A copied token without real ownership, or a stripped token, is a page change.
-  spoofedSlot.setAttribute("data-agws-token", injector.getOwnershipToken());
+  spoofedSlot.setAttribute("data-agws-token", injector.getCueToken());
   assert.equal(isAssistantMutation({ target: spoofedSlot }), false);
   ownedSlot.removeAttribute("data-agws-token");
   assert.equal(isAssistantMutation({ target: ownedSlot, addedNodes: [ownedCue] }), false);
