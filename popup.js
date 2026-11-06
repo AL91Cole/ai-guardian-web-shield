@@ -26,23 +26,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   trustedAdultContact: ""
 });
 
-const PAGE_SCRIPT_FILES = Object.freeze([
-  "shared/behaviorCorrelation.js",
-  "shared/behaviorMonitor.js",
-  "content.js",
-  "shared/debounce.js",
-  "shared/domUtils.js",
-  "shared/urlUtils.js",
-  "email/emailState.js",
-  "email/providerDetection.js",
-  "email/emailHeuristics.js",
-  "email/inboxRowScanner.js",
-  "email/messageLinkScanner.js",
-  "email/pageModeDetection.js",
-  "email/authFlowHandler.js",
-  "email/emailUiInjector.js",
-  "email/emailSafetyController.js"
-]);
+const PAGE_SCRIPT_FILES = globalThis.AI_GUARDIAN_PAGE_SCRIPT_FILES;
 
 const PROTECTION_LEVEL_COPY = {
   standard: "Standard Protection keeps everyday guidance balanced.",

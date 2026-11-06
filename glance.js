@@ -2,21 +2,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   readAloudEnabled: true
 });
 
-const PAGE_SCRIPT_FILES = Object.freeze([
-  "content.js",
-  "shared/debounce.js",
-  "shared/domUtils.js",
-  "shared/urlUtils.js",
-  "email/emailState.js",
-  "email/providerDetection.js",
-  "email/emailHeuristics.js",
-  "email/inboxRowScanner.js",
-  "email/messageLinkScanner.js",
-  "email/pageModeDetection.js",
-  "email/authFlowHandler.js",
-  "email/emailUiInjector.js",
-  "email/emailSafetyController.js"
-]);
+const PAGE_SCRIPT_FILES = globalThis.AI_GUARDIAN_PAGE_SCRIPT_FILES;
 
 const BAND_CLASS = {
   safe: "tone-safe",

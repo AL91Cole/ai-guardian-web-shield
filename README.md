@@ -8,14 +8,27 @@ AI Guardian Web Shield follows a local-first design philosophy, meaning analysis
 
 Risk scores are intended to provide guidance and awareness. They do not guarantee that a page is safe or unsafe.
 
-## New in 1.1.0: connected form actions
+## What's new in 1.2.0
 
-Guardian now combines sign-in field metadata, interactions with the same form,
+- **Popup scan fixed.** The toolbar popup's first scan and "Scan Again" injected
+  the page scripts without the behavior modules, so the page analysis crashed on
+  any tab that had not already been scanned from the side panel. Both views now
+  share one injection list in `shared/pageScripts.js`, and a partial injection no
+  longer locks the page out of a later successful scan.
+- **Release tooling.** `npm run release` runs the tests, validates the manifest,
+  injection order, syntax, versions and the no-network rule, then builds the
+  Chrome Web Store zip in `dist/`. CI runs the same steps and attaches the zip.
+- **Store listing copy** lives in `store/LISTING.md`, and the publishing steps in
+  `RELEASING.md`. Full history is in `CHANGELOG.md`.
+
+## Connected form actions (since 1.1.0)
+
+Guardian combines sign-in field metadata, interactions with the same form,
 the effective submission destination, and the intended submission method.
 Warnings explain the connected actions and show whether an attempt was paused
 or allowed to continue.
 
-| Observed combination | New behavior |
+| Observed combination | Behavior |
 | --- | --- |
 | Sign-in field + GET submission | Warn: credentials could appear in a URL |
 | Sign-in field + HTTP destination | Warn: the connection is not encrypted |
@@ -23,11 +36,11 @@ or allowed to continue.
 | Sign-in field + external destination with other address warning signs | Warn: multiple signals agree |
 | Ordinary HTTPS POST, including an external identity provider | No warning from cross-origin submission alone |
 
-The new evidence is held in memory for up to 90 seconds, with at most 64 events
+The evidence is held in memory for up to 90 seconds, with at most 64 events
 and 8 findings. It uses generated form IDs and origins only. It does not read
 field values or retain URL paths, queries, fragments, keystrokes, or request
-bodies in the new behavior history. Navigation resets that history. Existing
-page reports still include the current page URL as before.
+bodies in the behavior history. Navigation resets that history. Page reports
+still include the current page URL.
 
 **Visibility:** this extension checks browser-visible forms on the page where
 it has been activated. It cannot observe hidden AI-agent tool calls, JavaScript
@@ -37,11 +50,24 @@ is not proof of a completed transfer. Page scripts can change or cancel actions
 after an observed event, so this is guidance rather than a complete exfiltration
 firewall. No new browser permissions are requested.
 
-### Check the update
+### Build, test and package
 
-Run `node --test tests/*.test.js` with Node.js 22 or newer. The tests cover normal
-sign-ins, joined warning signals, form isolation, submission overrides,
-single-use approval, expiry, and metadata privacy.
+Requires Node.js 22 or newer. There are no runtime dependencies.
+
+```bash
+npm test
+```
+
+```bash
+npm run check
+```
+
+```bash
+npm run package
+```
+
+`npm run release` runs all three and writes `dist/ai-guardian-web-shield-<version>.zip`,
+ready for the Chrome Web Store Developer Dashboard. See `RELEASING.md`.
 
 For a manual Chrome check, load the extension using the Developer Mode steps
 below. From the repository directory run `python3 -m http.server 8000`, open
@@ -297,32 +323,22 @@ No browsing content is transmitted to external servers by default.
 
 # Project structure
 
-manifest.json  
-Chrome extension configuration and permissions.
-
-background.js  
-Maintains tab state, manages risk updates, protects family settings, and tracks rapid interaction signals.
-
-content.js  
-Performs page signal evaluation, renders floating indicator, detects risky patterns, and provides proactive warnings.
-
-popup.html  
-User interface layout.
-
-popup.css  
-Visual styling and accessibility adjustments.
-
-popup.js  
-Renders risk explanations, settings controls, accessibility tools, and guidance details.
-
-icons/  
-Extension icon assets.
-
-images/  
-Project documentation screenshots.
-
-scripts/generate-icons.ps1  
-PowerShell script for regenerating icon assets.
+| Path | Purpose |
+| --- | --- |
+| `manifest.json` | Chrome extension configuration and permissions (Manifest V3). |
+| `background.js` | Service worker: per-tab reports, settings, Family Protection passcode, side panel. |
+| `content.js` | Page analysis, risk score, floating badge, search badges, proactive warnings. |
+| `shared/` | Modules injected with `content.js`: behavior correlation and monitor, URL and DOM helpers, and `pageScripts.js`, the single injection list. |
+| `email/` | Webmail provider detection, inbox and message scanning, email warning UI. |
+| `popup.html`, `glance.js`, `glance.css` | Toolbar popup: quick score, Scan Again, Read Out Loud, open side panel. |
+| `sidepanel.html`, `popup.js`, `popup.css` | Side panel: full explanations, settings, Family Protection, accessibility. |
+| `icons/` | Extension icon assets and the SVG source. |
+| `images/` | README screenshots (not packaged). |
+| `scripts/check-extension.mjs` | Pre-release validator run by `npm run check`. |
+| `scripts/package.mjs` | Builds the Web Store zip, run by `npm run package`. |
+| `scripts/generate-icons.ps1` | PowerShell script for regenerating icon PNGs. |
+| `tests/` | Node test suite plus a manual browser fixture. |
+| `store/LISTING.md` | Chrome Web Store listing copy and permission justifications. |
 
 ---
 

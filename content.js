@@ -11,6 +11,12 @@
     return;
   }
 
+  if (!globalThis.AI_GUARDIAN_BEHAVIOR_MONITOR || !globalThis.AI_GUARDIAN_BEHAVIOR) {
+    // Leave the loaded flag unset so a complete injection can still succeed later.
+    console.warn("AI Guardian Web Shield: behavior modules must load before content.js.");
+    return;
+  }
+
   window.aiGuardianWebShieldLoaded = true;
 
   const PUSHY_PHRASES = [
