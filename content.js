@@ -768,6 +768,7 @@
     walletRecoveryBait: 90,
     fakeSuspensionSignIn: 76,
     threeModerateSignals: 45,
+    brandBaitLink: 40,
     oneStrongSignal: 60,
     twoStrongSignals: 78
   });
@@ -809,6 +810,7 @@
     familyLearnMoreButton: null,
     banner: null,
     indicatorCollapsed: true,
+    indicatorUserCollapsed: false,
     activeDecisionOptions: null,
     activeFamilyRestriction: null,
     root: null,
@@ -1108,6 +1110,7 @@
     hidePageBanner();
     hideFamilyProtectionBlock();
     getEmailSafetyController()?.handleNavigationReset?.(location.href);
+    state.indicatorUserCollapsed = false;
     setFloatingIndicatorCollapsed(true);
     showPendingFloatingIndicator();
     clearTabPageStateInBackground();
@@ -2270,11 +2273,20 @@
         score -= 10;
       }
 
+      // The sign-in score cap is earned by a known provider, a trusted or
+      // education host, or the site you are already on. A bare "login." or
+      // "sso." prefix on an unknown external host is not enough: anyone can
+      // register one.
+      const trustedAuthCapAllowed =
+        trustedAuthFlow.isTrustedAuthFlow &&
+        (Boolean(trustedAuthFlow.brand) || trusted || isEduDomain ||
+          (Boolean(context.currentRootDomain) && rootDomain === context.currentRootDomain));
+
       score = applyRiskGuardrails(score, signalCounts, {
         trusted,
         isEduDomain,
         sameSiteLevel,
-        trustedAuthFlow: trustedAuthFlow.isTrustedAuthFlow
+        trustedAuthFlow: trustedAuthCapAllowed
       });
       score = applyUrlScoreFloors(score, {
         localKnownRiskMatch,
@@ -2375,10 +2387,16 @@
       score += SIGNAL_WEIGHTS.strong.normal;
       signalCounts.strong += 1;
       addReasonEntry(reasonEntries, mismatch.reason, SIGNAL_WEIGHTS.strong.normal);
+      // A label that spells out one address while the link opens another is a
+      // classic phishing tell; it must reach the band where clicks are paused.
+      score = Math.max(score, SCORE_FLOORS.oneStrongSignal);
     } else if (mismatch.level === "second-look") {
       score += SIGNAL_WEIGHTS.moderate.light;
       signalCounts.moderate += 1;
       addReasonEntry(reasonEntries, mismatch.reason, SIGNAL_WEIGHTS.moderate.light);
+      // "Confirm your PayPal account" pointing at an unknown host should never
+      // wear a green "Looks normal" cue, even when the address itself is quiet.
+      score = Math.max(score, SCORE_FLOORS.brandBaitLink);
     }
 
     score = applyRiskGuardrails(score, signalCounts, {
@@ -2396,6 +2414,9 @@
       label: bandDetails.label,
       reasons: getTopReasonTexts(reasonEntries, 3),
       reasonEntries: cloneReasonEntries(reasonEntries),
+      // Report the link's own counts, not the bare address's, so guided-mode
+      // decisions see the label mismatch.
+      signalCounts,
       mismatchLevel: mismatch.level,
       text: linkText
     };
@@ -3274,10 +3295,11 @@
     const warningKey = navigationIntent?.warningKey || buildNavigationWarningKey(resolvedUrl);
     const emailAuthFlowHandler = getEmailAuthFlowHandler();
 
+    // A recent warning is not approval. Only an explicit "Continue" or a
+    // trusted sign-in allowance lets the click through without a dialog.
     if (
       isNavigationApproved(warningKey) ||
       state.shownWarningKeys.has(warningKey) ||
-      emailAuthFlowHandler?.isRecentlyWarned?.(resolvedUrl) ||
       emailAuthFlowHandler?.isAllowOnceTarget?.(resolvedUrl)
     ) {
       return;
@@ -4217,6 +4239,14 @@
     );
 
     state.indicator.hidden = !state.settings.floatingBadgeEnabled;
+
+    // A collapsed badge is just a small icon; a high or risk score should be
+    // readable without a click unless the person hid it on purpose.
+    if ((report.band === "high" || report.band === "risk") && state.indicatorCollapsed && !state.indicatorUserCollapsed) {
+      state.indicatorCollapsed = false;
+      sendTabUiStateToBackground();
+    }
+
     syncFloatingIndicatorState();
   }
 
@@ -4241,6 +4271,8 @@
 
   function toggleFloatingIndicatorCollapsed() {
     setFloatingIndicatorCollapsed(!state.indicatorCollapsed);
+    // Remember a deliberate "Hide" so a risky score does not pop it open again.
+    state.indicatorUserCollapsed = state.indicatorCollapsed;
   }
 
   function setFloatingIndicatorCollapsed(isCollapsed) {

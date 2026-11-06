@@ -12,14 +12,21 @@ Requirements: Node.js 22 or newer and a current Chrome.
    ```
 
    The package lands in `dist/ai-guardian-web-shield-<version>.zip`.
-3. Load the unpacked folder in `chrome://extensions` with Developer Mode on and
+3. If Playwright is installed, run the browser smoke test and glance at the
+   screenshots it writes to `tests/e2e/output/`:
+
+   ```bash
+   npm run e2e
+   ```
+
+4. Load the unpacked folder in `chrome://extensions` with Developer Mode on and
    walk through the browser smoke test in `SECURITY.md` (popup, side panel,
    "Scan Again" on a fresh tab, settings updates on an already scanned tab,
    passcode setup and unlock, navigation resets).
-4. Upload the zip in the Chrome Web Store Developer Dashboard, paste the release
+5. Upload the zip in the Chrome Web Store Developer Dashboard, paste the release
    notes from `CHANGELOG.md`, and confirm the listing fields in
    `store/LISTING.md` still match.
-5. Tag the release in git:
+6. Tag the release in git:
 
    ```bash
    git tag v<version>

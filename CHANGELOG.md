@@ -60,6 +60,24 @@ All notable changes to AI Guardian Web Shield. Versions match `manifest.json`.
   injector only trusts slots it created (tracked in a WeakSet and tagged with
   a per-injection random token). Page-authored elements that copy the class
   names are never skipped by the link scanner, rewritten, or removed.
+- Found by the new browser smoke test: a link whose label spells out one
+  address while it opens another (for example "paypal.com/secure" pointing at
+  an unknown sign-in host) scored only 30 and never warned. Such links now
+  start at the "High caution" floor, so the click is paused. The link
+  assessment also reports its own signal counts instead of the bare address's.
+- Found by the smoke test: for 15 seconds after a warning, clicking the same
+  link again navigated with no dialog. A recent warning is no longer treated
+  as approval.
+- Brand bait such as "Confirm your PayPal account" pointing at an unknown host
+  no longer gets a green "Looks normal" cue; it starts in the "Be careful"
+  band.
+- The trusted sign-in score cap is only applied for known providers, trusted
+  or education hosts, or the site you are already on. A bare "login." or
+  "sso." prefix on an unknown host no longer earns it.
+- Webmail: an opened message that merely contains a download link is no
+  longer labelled "Attachment view".
+- The floating badge expands by itself on a high or risk page unless you hid
+  it on purpose, so the score is readable without a click.
 - Single-page-app navigation is now detected. The old history patch ran in
   the isolated world, which page scripts never call, so it was dead code. A
   small main-world hook installed at injection time announces pushState and
@@ -82,6 +100,11 @@ All notable changes to AI Guardian Web Shield. Versions match `manifest.json`.
 - `store/LISTING.md` with listing copy, permission justifications and privacy
   disclosures, and `RELEASING.md` with the publishing checklist.
 - CI now runs the validator and packaging step and uploads the zip artifact.
+- `npm run e2e`: a Playwright browser smoke test (`tests/e2e/`) that loads
+  the real extension in Chromium, serves local fixture pages under fake
+  hostnames, and checks the badge, warning dialogs, lookalike and regional
+  domains, SPA navigation, webmail cues, connected form warnings, the popup
+  and the side panel. Screenshots land in `tests/e2e/output/`.
 
 ## 1.1.0
 

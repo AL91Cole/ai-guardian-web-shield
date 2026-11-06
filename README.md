@@ -76,6 +76,11 @@ npm run package
 `npm run release` runs all three and writes `dist/ai-guardian-web-shield-<version>.zip`,
 ready for the Chrome Web Store Developer Dashboard. See `RELEASING.md`.
 
+`npm run e2e` runs a browser smoke test against the real extension in
+Chromium (needs Playwright, see `tests/e2e/README.md`). It drives the page
+badge, warning dialogs, webmail cues, single-page-app navigation, the popup
+and the side panel against local fixture pages and saves screenshots.
+
 For a manual Chrome check, load the extension using the Developer Mode steps
 below. From the repository directory run `python3 -m http.server 8000`, open
 `http://localhost:8000/tests/manual/behavior-forms.html`, activate Guardian on
@@ -344,7 +349,7 @@ No browsing content is transmitted to external servers by default.
 | `scripts/check-extension.mjs` | Pre-release validator run by `npm run check`. |
 | `scripts/package.mjs` | Builds the Web Store zip, run by `npm run package`. |
 | `scripts/generate-icons.ps1` | PowerShell script for regenerating icon PNGs. |
-| `tests/` | Node test suite plus a manual browser fixture. |
+| `tests/` | Node test suite, a manual browser fixture, and the Playwright smoke test in `tests/e2e/`. |
 | `store/LISTING.md` | Chrome Web Store listing copy and permission justifications. |
 
 ---
