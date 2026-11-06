@@ -9,6 +9,8 @@ Web Shield uses local heuristics and can miss threats or flag harmless pages. A 
 - Persistent extension storage is restricted to trusted extension contexts. Content scripts receive a read-only set of analysis preferences through messages; they do not receive passcode records, unlock deadlines, review notes, or settings history.
 - Passcode attempts and setting mutations run in sequence, and setting values must match supported types and bounds.
 - Settings updates reach only tabs where the extension already has permission. The extension uses `activeTab` and does not request access to all sites.
+- One function runs in the page's main world: the route hook in `shared/pageScripts.js`. It wraps `history.pushState` and `history.replaceState` to dispatch a payload-free `agws:route-change` event and holds no extension data. The isolated-world scripts treat that event as untrusted and only re-read the address.
+- Webmail cues are plain page markup. The injector tracks the slots it created and tags them with a per-injection random token; elements a page creates with the same class names are never trusted, skipped during scanning, rewritten, or removed.
 
 Family Protection is a local convenience lock. Someone who controls the browser profile, can edit extension files, or can remove the extension can bypass it. Short numeric passcodes and browser storage do not provide encryption at rest. Use device management and operating-system controls for enforced child or school policies.
 

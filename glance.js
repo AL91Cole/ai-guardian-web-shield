@@ -305,8 +305,32 @@ async function ensurePageScriptsInjected(tabId) {
       },
       files: PAGE_SCRIPT_FILES
     });
-    return true;
   } catch (error) {
     return false;
+  }
+
+  await installMainWorldRouteHook(tabId);
+  return true;
+}
+
+// Single-page apps change the URL through the page's own history object, which
+// the isolated world cannot see. A tiny main-world hook announces those changes.
+async function installMainWorldRouteHook(tabId) {
+  const hook = globalThis.AI_GUARDIAN_MAIN_WORLD_ROUTE_HOOK;
+
+  if (typeof hook !== "function") {
+    return;
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: {
+        tabId
+      },
+      world: "MAIN",
+      func: hook
+    });
+  } catch (error) {
+    // Pages that forbid main-world scripts still get the mutation-observer fallback.
   }
 }

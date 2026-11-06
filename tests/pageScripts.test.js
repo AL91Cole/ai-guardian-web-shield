@@ -40,3 +40,46 @@ test('content.js refuses to mark itself loaded without the behavior modules', ()
   vm.runInContext(source, context, { filename: 'content.js' });
   assert.equal(window.aiGuardianWebShieldLoaded, undefined, 'a partial injection must stay retryable');
 });
+
+test('main-world route hook announces pushState and replaceState once', () => {
+  const { installRouteChangeHook } = pageScripts;
+  assert.equal(typeof installRouteChangeHook, 'function');
+  // The function is serialized into the page, so it must not close over module scope.
+  assert.doesNotMatch(installRouteChangeHook.toString(), /files|globalThis|chrome\./);
+
+  const events = [];
+  const history = {
+    calls: [],
+    pushState(...args) { this.calls.push(['push', ...args]); return 'pushed'; },
+    replaceState(...args) { this.calls.push(['replace', ...args]); }
+  };
+  const context = vm.createContext({
+    history,
+    document: { dispatchEvent: (event) => events.push(event.type) },
+    Event: class { constructor(type) { this.type = type; } },
+    Object
+  });
+  const run = () => vm.runInContext(`(${installRouteChangeHook.toString()})()`, context);
+
+  assert.equal(run(), true);
+  assert.equal(history.pushState({}, '', '/a'), 'pushed', 'the original return value is preserved');
+  history.replaceState({}, '', '/b');
+  assert.deepEqual(events, ['agws:route-change', 'agws:route-change']);
+  assert.equal(history.calls.length, 2);
+
+  assert.equal(run(), true, 'a second install is a no-op');
+  history.pushState({}, '', '/c');
+  assert.equal(events.length, 3, 'no double wrapping');
+  assert.equal(Object.keys(history).includes('__agwsRouteHookInstalled'), false, 'marker is not enumerable');
+});
+
+test('popup and side panel install the main-world hook after injecting page scripts', () => {
+  for (const file of ['glance.js', 'popup.js']) {
+    const source = fs.readFileSync(path.join(root, file), 'utf8');
+    assert.match(source, /world: "MAIN"/, `${file} must inject the route hook into the main world`);
+    assert.match(source, /func: hook/, `${file} must pass the shared hook function`);
+  }
+  const content = fs.readFileSync(path.join(root, 'content.js'), 'utf8');
+  assert.match(content, /addEventListener\("agws:route-change"/);
+  assert.doesNotMatch(content, /patchHistoryForSpaNavigation/);
+});

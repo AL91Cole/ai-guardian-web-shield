@@ -56,6 +56,15 @@ All notable changes to AI Guardian Web Shield. Versions match `manifest.json`.
   instead of duplicating them; synthetic clicks without an element target no
   longer throw; link labels like "Vue.js" are not treated as addresses.
 - Popup read-aloud button now switches to "Stop Reading" when speech starts.
+- Email cue markup can no longer be spoofed or used to hide links: the
+  injector only trusts slots it created (tracked in a WeakSet and tagged with
+  a per-injection random token). Page-authored elements that copy the class
+  names are never skipped by the link scanner, rewritten, or removed.
+- Single-page-app navigation is now detected. The old history patch ran in
+  the isolated world, which page scripts never call, so it was dead code. A
+  small main-world hook installed at injection time announces pushState and
+  replaceState through a payload-free event, and the page and email scanners
+  re-read the address on it.
 
 ### Added
 
@@ -66,9 +75,10 @@ All notable changes to AI Guardian Web Shield. Versions match `manifest.json`.
   version consistency.
 - `scripts/package.mjs`: dependency-free, reproducible Chrome Web Store zip
   builder that ships only runtime files.
-- `tests/pageScripts.test.js` covering the injection list and the retry guard,
-  and `tests/emailHeuristics.test.js` covering phrase matching, sender parsing
-  and the sign-in bypass rules.
+- `tests/pageScripts.test.js` covering the injection list, the retry guard and
+  the main-world route hook; `tests/emailHeuristics.test.js` covering phrase
+  matching, sender parsing and the sign-in bypass rules; and
+  `tests/emailCueOwnership.test.js` covering cue slot ownership.
 - `store/LISTING.md` with listing copy, permission justifications and privacy
   disclosures, and `RELEASING.md` with the publishing checklist.
 - CI now runs the validator and packaging step and uploads the zip artifact.

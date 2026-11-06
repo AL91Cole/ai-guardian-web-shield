@@ -19,7 +19,9 @@ Risk scores are intended to provide guidance and awareness. They do not guarante
   browsing prompts can fire again, webmail rows are no longer all flagged as
   risky, the sign-in bypass is limited to real webmail contexts, brand and
   lookalike checks stop flagging "purchase" or google.de, and "Go Back" on a
-  warning no longer approves the next click. Full list in `CHANGELOG.md`.
+  warning no longer approves the next click. Webmail cue markup cannot be
+  spoofed by a page, and single-page-app navigation is detected through a
+  small main-world history hook. Full list in `CHANGELOG.md`.
 - **Release tooling.** `npm run release` runs the tests, validates the manifest,
   injection order, syntax, versions and the no-network rule, then builds the
   Chrome Web Store zip in `dist/`. CI runs the same steps and attaches the zip.

@@ -824,7 +824,6 @@
     createAssistantUi();
     attachMessageHandler();
     attachPageListeners();
-    patchHistoryForSpaNavigation();
     await loadSettings();
     applyUiSettings();
     analyzePage({ forceRefresh: true, showPageWarnings: false });
@@ -1023,6 +1022,9 @@
     document.addEventListener("input", observeCredentialInteraction, true);
     window.addEventListener("hashchange", handleLocationMaybeChanged);
     window.addEventListener("popstate", handleLocationMaybeChanged);
+    // Fired by the main-world history hook installed at injection time. The event
+    // is untrusted and carries nothing; the handler only re-reads location.href.
+    document.addEventListener("agws:route-change", handleLocationMaybeChanged);
 
     const observer = new MutationObserver((mutations) => {
       const hasRealPageChange = mutations.some((mutation) => !isAssistantMutation(mutation));
@@ -1071,30 +1073,13 @@
       node.closest("#ai-guardian-modal-root") ||
       node.id === "ai-guardian-family-root" ||
       node.closest("#ai-guardian-family-root") ||
-      node.closest(".ai-guardian-mail-cue-slot") ||
-      node.closest("[data-agws-enhanced='true'][data-agws-feature='email-preview']")
+      // Only cue slots this injection created count; the class names are copyable.
+      Boolean(getEmailFeatureModule()?.emailUiInjector?.isOwnSlot?.(node))
     ) {
       return true;
     }
 
     return Boolean(node.closest(".ai-guardian-gsr-slot, .ai-guardian-gsr-badge-wrap"));
-  }
-
-  function patchHistoryForSpaNavigation() {
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    history.pushState = function (...args) {
-      const result = originalPushState.apply(this, args);
-      handleLocationMaybeChanged();
-      return result;
-    };
-
-    history.replaceState = function (...args) {
-      const result = originalReplaceState.apply(this, args);
-      handleLocationMaybeChanged();
-      return result;
-    };
   }
 
   function handleLocationMaybeChanged() {

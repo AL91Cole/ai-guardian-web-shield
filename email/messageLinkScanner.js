@@ -61,7 +61,7 @@
           scope.querySelectorAll(selector).forEach((element) => {
             if (
               !(element instanceof HTMLElement) ||
-              element.closest(".ai-guardian-mail-cue-slot") ||
+              emailNamespace.emailUiInjector?.isOwnSlot?.(element) ||
               typeof deps.isVisibleElement !== "function" ||
               !deps.isVisibleElement(element) ||
               typeof domUtils.isElementNearViewport !== "function" ||
@@ -87,7 +87,7 @@
       scope.querySelectorAll("button[formaction], button[data-url], [role='button'][data-url]").forEach((element) => {
         if (
           !(element instanceof HTMLElement) ||
-          element.closest(".ai-guardian-mail-cue-slot") ||
+          emailNamespace.emailUiInjector?.isOwnSlot?.(element) ||
           typeof deps.isVisibleElement !== "function" ||
           !deps.isVisibleElement(element) ||
           typeof domUtils.isElementNearViewport !== "function" ||

@@ -25,7 +25,46 @@
 
   globalThis.AI_GUARDIAN_PAGE_SCRIPT_FILES = files;
 
+  // Runs in the page's MAIN world through chrome.scripting.executeScript({ func }).
+  // It must stay self-contained: it is serialized, so it cannot reference anything
+  // outside its own body. It exposes no extension data; it only announces that
+  // history changed so the isolated-world scripts re-read location.href.
+  function installRouteChangeHook() {
+    const marker = "__agwsRouteHookInstalled";
+
+    if (Object.prototype.hasOwnProperty.call(history, marker)) {
+      return true;
+    }
+
+    Object.defineProperty(history, marker, { value: true, enumerable: false, configurable: false, writable: false });
+
+    const notify = () => {
+      try {
+        document.dispatchEvent(new Event("agws:route-change"));
+      } catch (_) { /* The document may be tearing down. */ }
+    };
+
+    for (const name of ["pushState", "replaceState"]) {
+      const original = history[name];
+
+      if (typeof original !== "function") {
+        continue;
+      }
+
+      history[name] = function routeHook(...args) {
+        const result = original.apply(this, args);
+        notify();
+        return result;
+      };
+    }
+
+    return true;
+  }
+
+  globalThis.AI_GUARDIAN_MAIN_WORLD_ROUTE_HOOK = installRouteChangeHook;
+
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = files;
+    // Node consumers get the frozen list plus the hook for testing.
+    module.exports = Object.freeze(Object.assign(Array.from(files), { installRouteChangeHook }));
   }
 })();
