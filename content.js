@@ -1023,10 +1023,8 @@
     document.addEventListener("input", observeCredentialInteraction, true);
     window.addEventListener("hashchange", handleLocationMaybeChanged);
     window.addEventListener("popstate", handleLocationMaybeChanged);
-    // Dispatched by the main-world history hook (see shared/pageScripts.js)
-    // after pushState/replaceState. Any page script can dispatch it too, so it
-    // is untrusted: it carries no payload and only prompts a re-read of
-    // location.href, exactly like popstate.
+    // Fired by the main-world history hook installed at injection time. The event
+    // is untrusted and carries nothing; the handler only re-reads location.href.
     document.addEventListener("agws:route-change", handleLocationMaybeChanged);
 
     const observer = new MutationObserver((mutations) => {
@@ -1076,8 +1074,8 @@
       node.closest("#ai-guardian-modal-root") ||
       node.id === "ai-guardian-family-root" ||
       node.closest("#ai-guardian-family-root") ||
-      node.closest(".ai-guardian-mail-cue-slot") ||
-      node.closest("[data-agws-enhanced='true'][data-agws-feature='email-preview']")
+      // Only cue slots this injection created count; the class names are copyable.
+      Boolean(getEmailFeatureModule()?.emailUiInjector?.isOwnSlot?.(node))
     ) {
       return true;
     }

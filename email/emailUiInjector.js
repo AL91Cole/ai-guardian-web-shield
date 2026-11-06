@@ -7,9 +7,60 @@
     return root.aiGuardianEmailDeps || {};
   }
 
+  // Only slots this injection created are trusted. A page or HTML email can
+  // copy the class names, so class names alone never grant skip or removal.
+  const ownedSlots = new WeakSet();
+  const cueToken = createCueToken();
+
+  function createCueToken() {
+    const bytes = new Uint8Array(12);
+
+    if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+      crypto.getRandomValues(bytes);
+    } else {
+      for (let index = 0; index < bytes.length; index += 1) {
+        bytes[index] = Math.floor(Math.random() * 256);
+      }
+    }
+
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  function getCueToken() {
+    return cueToken;
+  }
+
+  function isOwnSlot(element) {
+    if (!element || typeof element.closest !== "function") {
+      return false;
+    }
+
+    const slot = element.closest(".ai-guardian-mail-cue-slot");
+    return Boolean(slot) && ownedSlots.has(slot) && slot.dataset?.agwsToken === cueToken;
+  }
+
+  function createOwnedSlot(kind, extraClass) {
+    const cueSlot = document.createElement("span");
+    cueSlot.className = `ai-guardian-mail-cue-slot ${extraClass}`;
+    cueSlot.dataset.kind = kind;
+    cueSlot.dataset.agwsEnhanced = "true";
+    cueSlot.dataset.agwsFeature = "email-preview";
+    cueSlot.dataset.agwsToken = cueToken;
+    ownedSlots.add(cueSlot);
+    return cueSlot;
+  }
+
+  function forEachOwnedSlot(callback) {
+    document.querySelectorAll(".ai-guardian-mail-cue-slot").forEach((cueSlot) => {
+      if (ownedSlots.has(cueSlot)) {
+        callback(cueSlot);
+      }
+    });
+  }
+
   function clearPreviews() {
-    document.querySelectorAll(".ai-guardian-mail-cue-slot").forEach((cueNode) => {
-      cueNode.remove();
+    forEachOwnedSlot((cueSlot) => {
+      cueSlot.remove();
     });
   }
 
@@ -59,20 +110,14 @@
     }
 
     const existingSlot = Array.from(host.children).find((child) => {
-      return child instanceof HTMLElement &&
-        child.classList.contains("ai-guardian-mail-cue-slot") &&
-        child.dataset.kind === "row";
+      return child instanceof HTMLElement && ownedSlots.has(child) && child.dataset.kind === "row";
     });
 
     if (existingSlot instanceof HTMLElement) {
       return existingSlot;
     }
 
-    const cueSlot = document.createElement("span");
-    cueSlot.className = "ai-guardian-mail-cue-slot ai-guardian-mail-row-slot";
-    cueSlot.dataset.kind = "row";
-    cueSlot.dataset.agwsEnhanced = "true";
-    cueSlot.dataset.agwsFeature = "email-preview";
+    const cueSlot = createOwnedSlot("row", "ai-guardian-mail-row-slot");
     host.appendChild(cueSlot);
     return cueSlot;
   }
@@ -80,24 +125,20 @@
   function ensureLinkCueSlot(element) {
     const sibling = element.nextElementSibling;
 
-    if (
-      sibling instanceof HTMLElement &&
-      sibling.classList.contains("ai-guardian-mail-cue-slot") &&
-      sibling.dataset.kind === "link"
-    ) {
+    if (sibling instanceof HTMLElement && ownedSlots.has(sibling) && sibling.dataset.kind === "link") {
       return sibling;
     }
 
-    const cueSlot = document.createElement("span");
-    cueSlot.className = "ai-guardian-mail-cue-slot ai-guardian-mail-link-slot";
-    cueSlot.dataset.kind = "link";
-    cueSlot.dataset.agwsEnhanced = "true";
-    cueSlot.dataset.agwsFeature = "email-preview";
+    const cueSlot = createOwnedSlot("link", "ai-guardian-mail-link-slot");
     element.insertAdjacentElement("afterend", cueSlot);
     return cueSlot;
   }
 
   function updateCue(cueSlot, label, detail, tone) {
+    if (!ownedSlots.has(cueSlot)) {
+      return;
+    }
+
     let cue = cueSlot.firstElementChild;
 
     if (!(cue instanceof HTMLElement) || !cue.classList.contains("ai-guardian-mail-cue")) {
@@ -116,7 +157,7 @@
   }
 
   function pruneInactiveCueSlots(activeSlots) {
-    document.querySelectorAll(".ai-guardian-mail-cue-slot").forEach((cueSlot) => {
+    forEachOwnedSlot((cueSlot) => {
       if (!activeSlots.has(cueSlot)) {
         cueSlot.remove();
       }
@@ -125,6 +166,8 @@
 
   emailNamespace.emailUiInjector = {
     clearPreviews,
+    getCueToken,
+    isOwnSlot,
     getRowCueHostSelectors,
     ensureRowCueSlot,
     ensureLinkCueSlot,

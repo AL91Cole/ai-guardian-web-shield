@@ -3,7 +3,6 @@ const DEFAULT_SETTINGS = Object.freeze({
 });
 
 const PAGE_SCRIPT_FILES = globalThis.AI_GUARDIAN_PAGE_SCRIPT_FILES;
-const MAIN_WORLD_ROUTE_HOOK = globalThis.AI_GUARDIAN_MAIN_WORLD_ROUTE_HOOK;
 
 const BAND_CLASS = {
   safe: "tone-safe",
@@ -310,22 +309,28 @@ async function ensurePageScriptsInjected(tabId) {
     return false;
   }
 
-  // Page scripts call the main-world history object, so the single-page-app
-  // route hook has to live there. It is a self-contained function, not a file,
-  // and it only dispatches a payload-free "agws:route-change" event that the
-  // content script answers by re-reading location.href.
+  await installMainWorldRouteHook(tabId);
+  return true;
+}
+
+// Single-page apps change the URL through the page's own history object, which
+// the isolated world cannot see. A tiny main-world hook announces those changes.
+async function installMainWorldRouteHook(tabId) {
+  const hook = globalThis.AI_GUARDIAN_MAIN_WORLD_ROUTE_HOOK;
+
+  if (typeof hook !== "function") {
+    return;
+  }
+
   try {
     await chrome.scripting.executeScript({
       target: {
         tabId
       },
       world: "MAIN",
-      func: MAIN_WORLD_ROUTE_HOOK
+      func: hook
     });
   } catch (error) {
-    // The content script still catches route changes through popstate,
-    // hashchange and DOM mutations, so a missing hook is not a failed scan.
+    // Pages that forbid main-world scripts still get the mutation-observer fallback.
   }
-
-  return true;
 }

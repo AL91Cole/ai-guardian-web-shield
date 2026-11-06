@@ -292,7 +292,7 @@
     }
 
     return Boolean(
-      node.closest(".ai-guardian-mail-cue-slot") ||
+      emailNamespace.emailUiInjector?.isOwnSlot?.(node) ||
       node.closest("#ai-guardian-root") ||
       node.closest("#ai-guardian-modal-root") ||
       node.closest("#ai-guardian-family-root")
@@ -414,9 +414,7 @@
 
     window.addEventListener("hashchange", routeChangeHandler, true);
     window.addEventListener("popstate", routeChangeHandler, true);
-    // pushState/replaceState are announced by the main-world hook installed
-    // from shared/pageScripts.js; the event is payload-free and only prompts a
-    // refresh that re-reads location.href.
+    // Dispatched by the main-world history hook; it carries no payload.
     document.addEventListener("agws:route-change", routeChangeHandler, true);
   }
 

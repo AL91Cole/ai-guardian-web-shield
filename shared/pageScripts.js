@@ -1,5 +1,4 @@
-// Single source of truth for what popup.js and glance.js inject on demand:
-// the page script files (isolated world) and the route-change hook (main world).
+// Single source of truth for the page scripts injected on demand.
 // Order matters: content.js reads the behavior globals during setup, and the
 // email modules build on content.js and each other.
 // Loaded by popup.html and sidepanel.html before their controller scripts.
@@ -24,47 +23,48 @@
     "email/emailSafetyController.js"
   ]);
 
-  // Injected into the page's MAIN world with chrome.scripting.executeScript
-  // ({ func }) so that history.pushState/replaceState calls made by page
-  // scripts are visible: a wrapper installed from the isolated world never
-  // runs for them. It is serialized by Chrome, so it must stay self-contained,
-  // and it must not carry extension data: it only announces "the URL may have
-  // changed" with a payload-free event that content.js treats as untrusted.
-  function installRouteChangeNotifier() {
-    const FLAG = "__agwsRouteChangeHooked";
-    if (history[FLAG]) {
-      return;
+  globalThis.AI_GUARDIAN_PAGE_SCRIPT_FILES = files;
+
+  // Runs in the page's MAIN world through chrome.scripting.executeScript({ func }).
+  // It must stay self-contained: it is serialized, so it cannot reference anything
+  // outside its own body. It exposes no extension data; it only announces that
+  // history changed so the isolated-world scripts re-read location.href.
+  function installRouteChangeHook() {
+    const marker = "__agwsRouteHookInstalled";
+
+    if (Object.prototype.hasOwnProperty.call(history, marker)) {
+      return true;
     }
 
-    try {
-      Object.defineProperty(history, FLAG, { value: true });
-    } catch (error) {
-      // A page that sealed its history object cannot be marked, so leave it
-      // untouched rather than risk wrapping it twice.
-      return;
-    }
+    Object.defineProperty(history, marker, { value: true, enumerable: false, configurable: false, writable: false });
 
     const notify = () => {
-      document.dispatchEvent(new CustomEvent("agws:route-change"));
+      try {
+        document.dispatchEvent(new Event("agws:route-change"));
+      } catch (_) { /* The document may be tearing down. */ }
     };
 
-    for (const method of ["pushState", "replaceState"]) {
-      const original = history[method];
+    for (const name of ["pushState", "replaceState"]) {
+      const original = history[name];
+
       if (typeof original !== "function") {
         continue;
       }
-      history[method] = function (...args) {
+
+      history[name] = function routeHook(...args) {
         const result = original.apply(this, args);
         notify();
         return result;
       };
     }
+
+    return true;
   }
 
-  globalThis.AI_GUARDIAN_PAGE_SCRIPT_FILES = files;
-  globalThis.AI_GUARDIAN_MAIN_WORLD_ROUTE_HOOK = installRouteChangeNotifier;
+  globalThis.AI_GUARDIAN_MAIN_WORLD_ROUTE_HOOK = installRouteChangeHook;
 
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = files;
+    // Node consumers get the frozen list plus the hook for testing.
+    module.exports = Object.freeze(Object.assign(Array.from(files), { installRouteChangeHook }));
   }
 })();
