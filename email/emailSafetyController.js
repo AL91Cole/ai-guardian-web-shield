@@ -13,7 +13,6 @@
   let emailObserver = null;
   let scrollListener = null;
   let routeChangeHandler = null;
-  let restoreHistoryMethods = null;
   let lastObservedUrl = "";
   let lastScanCache = null;
   let lastScanCacheAt = 0;
@@ -397,12 +396,8 @@
     if (routeChangeHandler) {
       window.removeEventListener("hashchange", routeChangeHandler, true);
       window.removeEventListener("popstate", routeChangeHandler, true);
+      document.removeEventListener("agws:route-change", routeChangeHandler, true);
       routeChangeHandler = null;
-    }
-
-    if (typeof restoreHistoryMethods === "function") {
-      restoreHistoryMethods();
-      restoreHistoryMethods = null;
     }
 
     started = false;
@@ -419,26 +414,10 @@
 
     window.addEventListener("hashchange", routeChangeHandler, true);
     window.addEventListener("popstate", routeChangeHandler, true);
-
-    const originalPushState = history.pushState.bind(history);
-    const originalReplaceState = history.replaceState.bind(history);
-
-    history.pushState = function pushStateWrapper(...args) {
-      const result = originalPushState(...args);
-      routeChangeHandler();
-      return result;
-    };
-
-    history.replaceState = function replaceStateWrapper(...args) {
-      const result = originalReplaceState(...args);
-      routeChangeHandler();
-      return result;
-    };
-
-    restoreHistoryMethods = () => {
-      history.pushState = originalPushState;
-      history.replaceState = originalReplaceState;
-    };
+    // pushState/replaceState are announced by the main-world hook installed
+    // from shared/pageScripts.js; the event is payload-free and only prompts a
+    // refresh that re-reads location.href.
+    document.addEventListener("agws:route-change", routeChangeHandler, true);
   }
 
   function startObserver() {

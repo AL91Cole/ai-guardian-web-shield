@@ -784,6 +784,7 @@
     behaviorExpiryTimer: null,
     shownWarningKeys: new Set(),
     refreshTimer: null,
+    locationCheckTimer: null,
     pageBannerTimer: null,
     indicator: null,
     indicatorToggle: null,
@@ -824,7 +825,6 @@
     createAssistantUi();
     attachMessageHandler();
     attachPageListeners();
-    patchHistoryForSpaNavigation();
     await loadSettings();
     applyUiSettings();
     analyzePage({ forceRefresh: true, showPageWarnings: false });
@@ -1023,6 +1023,11 @@
     document.addEventListener("input", observeCredentialInteraction, true);
     window.addEventListener("hashchange", handleLocationMaybeChanged);
     window.addEventListener("popstate", handleLocationMaybeChanged);
+    // Dispatched by the main-world history hook (see shared/pageScripts.js)
+    // after pushState/replaceState. Any page script can dispatch it too, so it
+    // is untrusted: it carries no payload and only prompts a re-read of
+    // location.href, exactly like popstate.
+    document.addEventListener("agws:route-change", handleLocationMaybeChanged);
 
     const observer = new MutationObserver((mutations) => {
       const hasRealPageChange = mutations.some((mutation) => !isAssistantMutation(mutation));
@@ -1080,33 +1085,40 @@
     return Boolean(node.closest(".ai-guardian-gsr-slot, .ai-guardian-gsr-badge-wrap"));
   }
 
-  function patchHistoryForSpaNavigation() {
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    history.pushState = function (...args) {
-      const result = originalPushState.apply(this, args);
-      handleLocationMaybeChanged();
-      return result;
-    };
-
-    history.replaceState = function (...args) {
-      const result = originalReplaceState.apply(this, args);
-      handleLocationMaybeChanged();
-      return result;
-    };
-  }
-
   function handleLocationMaybeChanged() {
-    window.setTimeout(() => {
+    window.clearTimeout(state.locationCheckTimer);
+    state.locationCheckTimer = window.setTimeout(() => {
       if (location.href === state.lastUrl) {
         return;
       }
 
-      state.lastUrl = location.href;
-      resetCurrentPageStateForNavigation();
+      syncLocationState();
       analyzePage({ showPageWarnings: false });
     }, 80);
+  }
+
+  function withoutFragment(url) {
+    const hashIndex = String(url || "").indexOf("#");
+    return hashIndex === -1 ? String(url || "") : String(url || "").slice(0, hashIndex);
+  }
+
+  // Records the current URL. Navigation to a new document resets the page
+  // state, including the connected-form evidence chain. A fragment-only change
+  // (`#panel` routing on the same page) is not a navigation to a new document,
+  // so the page is re-analyzed but approvals and evidence survive.
+  function syncLocationState() {
+    if (location.href === state.lastUrl) {
+      return false;
+    }
+
+    const documentChanged = withoutFragment(location.href) !== withoutFragment(state.lastUrl);
+    state.lastUrl = location.href;
+
+    if (documentChanged) {
+      resetCurrentPageStateForNavigation();
+    }
+
+    return documentChanged;
   }
 
   function resetCurrentPageStateForNavigation() {
@@ -1150,10 +1162,7 @@
   }
 
   function analyzePage(options = {}) {
-    if (location.href !== state.lastUrl) {
-      state.lastUrl = location.href;
-      resetCurrentPageStateForNavigation();
-    }
+    syncLocationState();
     const report = buildPageReport();
     const signature = createReportSignature(report);
 
@@ -3389,10 +3398,7 @@
       return;
     }
 
-    if (location.href !== state.lastUrl) {
-      state.lastUrl = location.href;
-      resetCurrentPageStateForNavigation();
-    }
+    syncLocationState();
     const submitter = event.submitter || null;
     const intent = globalThis.AI_GUARDIAN_BEHAVIOR_MONITOR.getSubmission(form, submitter, location.href);
     if (intent.method === "DIALOG") return;

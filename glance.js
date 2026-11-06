@@ -3,6 +3,7 @@ const DEFAULT_SETTINGS = Object.freeze({
 });
 
 const PAGE_SCRIPT_FILES = globalThis.AI_GUARDIAN_PAGE_SCRIPT_FILES;
+const MAIN_WORLD_ROUTE_HOOK = globalThis.AI_GUARDIAN_MAIN_WORLD_ROUTE_HOOK;
 
 const BAND_CLASS = {
   safe: "tone-safe",
@@ -305,8 +306,26 @@ async function ensurePageScriptsInjected(tabId) {
       },
       files: PAGE_SCRIPT_FILES
     });
-    return true;
   } catch (error) {
     return false;
   }
+
+  // Page scripts call the main-world history object, so the single-page-app
+  // route hook has to live there. It is a self-contained function, not a file,
+  // and it only dispatches a payload-free "agws:route-change" event that the
+  // content script answers by re-reading location.href.
+  try {
+    await chrome.scripting.executeScript({
+      target: {
+        tabId
+      },
+      world: "MAIN",
+      func: MAIN_WORLD_ROUTE_HOOK
+    });
+  } catch (error) {
+    // The content script still catches route changes through popstate,
+    // hashchange and DOM mutations, so a missing hook is not a failed scan.
+  }
+
+  return true;
 }

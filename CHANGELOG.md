@@ -6,6 +6,22 @@ All notable changes to AI Guardian Web Shield. Versions match `manifest.json`.
 
 ### Fixed
 
+- Single-page-app route changes made with `history.pushState` or
+  `history.replaceState` were never detected: the wrapper lived in the content
+  script's isolated world, which page scripts do not call, so only `popstate`,
+  `hashchange` and DOM mutations caught them. The popup and side panel now also
+  inject one small self-contained function into the page's main world that
+  wraps those two methods once and dispatches a payload-free
+  `agws:route-change` event. `content.js` and the email controller treat that
+  event like `popstate`: it is untrusted and only prompts a re-read of
+  `location.href`. No file is injected into the main world and no extension
+  data is exposed there; no new permissions are needed.
+- A fragment-only URL change (`#panel` routing on the same page) no longer
+  resets the Connected Form Actions evidence chain, page approvals or shown
+  warnings. A fragment change is not a navigation to a new document, and
+  resetting on it let a page discard the credential interaction before a
+  changed-destination submission. Navigation to a new path or query still
+  resets everything, and the chain still records origins only.
 - The toolbar popup injected the page scripts without
   `shared/behaviorCorrelation.js` and `shared/behaviorMonitor.js`, so the first
   scan or "Scan Again" on a tab that had not been scanned from the side panel
