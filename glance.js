@@ -2,21 +2,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   readAloudEnabled: true
 });
 
-const PAGE_SCRIPT_FILES = Object.freeze([
-  "content.js",
-  "shared/debounce.js",
-  "shared/domUtils.js",
-  "shared/urlUtils.js",
-  "email/emailState.js",
-  "email/providerDetection.js",
-  "email/emailHeuristics.js",
-  "email/inboxRowScanner.js",
-  "email/messageLinkScanner.js",
-  "email/pageModeDetection.js",
-  "email/authFlowHandler.js",
-  "email/emailUiInjector.js",
-  "email/emailSafetyController.js"
-]);
+const PAGE_SCRIPT_FILES = globalThis.AI_GUARDIAN_PAGE_SCRIPT_FILES;
 
 const BAND_CLASS = {
   safe: "tone-safe",
@@ -136,6 +122,7 @@ function handleReadAloudClick() {
   currentSpeech.rate = 0.95;
   currentSpeech.pitch = 1;
   currentSpeech.onend = updateReadButton;
+  currentSpeech.onstart = updateReadButton;
   currentSpeech.onerror = updateReadButton;
 
   window.speechSynthesis.cancel();
@@ -318,8 +305,32 @@ async function ensurePageScriptsInjected(tabId) {
       },
       files: PAGE_SCRIPT_FILES
     });
-    return true;
   } catch (error) {
     return false;
+  }
+
+  await installMainWorldRouteHook(tabId);
+  return true;
+}
+
+// Single-page apps change the URL through the page's own history object, which
+// the isolated world cannot see. A tiny main-world hook announces those changes.
+async function installMainWorldRouteHook(tabId) {
+  const hook = globalThis.AI_GUARDIAN_MAIN_WORLD_ROUTE_HOOK;
+
+  if (typeof hook !== "function") {
+    return;
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: {
+        tabId
+      },
+      world: "MAIN",
+      func: hook
+    });
+  } catch (error) {
+    // Pages that forbid main-world scripts still get the mutation-observer fallback.
   }
 }

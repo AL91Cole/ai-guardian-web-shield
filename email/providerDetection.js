@@ -158,7 +158,7 @@
         subject: ["[role='heading']", "h1", "h2"]
       },
       auth: {
-        chooser: ["div[data-test-id='account-picker']", ".table", "div[role='option'][data-value]"],
+        chooser: ["div[data-test-id='account-picker']", "div[role='option'][data-value]"],
         email: ["input[type='email']", "input[name='loginfmt']"],
         password: ["input[type='password']"]
       },
@@ -194,7 +194,7 @@
         subject: ["h1", "[data-test-id='message-view-subject']"]
       },
       auth: {
-        chooser: ["[data-test-id='account-switcher']", "li[data-username]", "body"],
+        chooser: ["[data-test-id='account-switcher']", "li[data-username]"],
         email: ["input[type='text']", "input[name='username']"],
         password: ["input[type='password']"]
       },
@@ -247,9 +247,8 @@
       supportTier: 2,
       rowPreviewMode: "adaptive",
       detection: {
-        hosts: ["www.icloud.com"],
+        hosts: ["icloud.com"],
         authHosts: ["idmsa.apple.com", "appleid.apple.com"],
-        pathHints: ["/mail"],
         uiSelectors: ["[aria-label*='Mailboxes' i]", "button[title*='Compose' i]"],
         uiTextHints: ["icloud mail", "mailboxes"]
       },
@@ -466,7 +465,8 @@
       const matchesPrefix = Array.isArray(detection.hostPrefixes)
         ? detection.hostPrefixes.some((prefix) => hostname.startsWith(prefix))
         : false;
-      const matchesPath = Array.isArray(detection.pathHints)
+      // Path hints alone only identify the generic webmail shape, never a named provider.
+      const matchesPath = environment.id === "generic_webmail" && Array.isArray(detection.pathHints)
         ? detection.pathHints.some((pathHint) => pathname.includes(pathHint))
         : false;
 
