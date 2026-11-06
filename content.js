@@ -1130,11 +1130,23 @@
     cleanupExpiredNavigationApprovals();
   }
 
+  const ANALYSIS_MAX_WAIT_MS = 6000;
+  let analysisFirstRequestedAt = 0;
+
   function scheduleAnalysis(delayMs = 1200) {
+    const now = Date.now();
+
+    if (!analysisFirstRequestedAt) {
+      analysisFirstRequestedAt = now;
+    }
+
+    // A page that mutates every second (countdowns, feeds) must not starve analysis.
+    const waitMs = Math.max(0, Math.min(delayMs, analysisFirstRequestedAt + ANALYSIS_MAX_WAIT_MS - now));
     window.clearTimeout(state.refreshTimer);
     state.refreshTimer = window.setTimeout(() => {
+      analysisFirstRequestedAt = 0;
       analyzePage({ showPageWarnings: false });
-    }, delayMs);
+    }, waitMs);
   }
 
   function analyzePage(options = {}) {
@@ -1416,7 +1428,7 @@
       }
     }
 
-    if (pageSignals.passwordFieldCount > 0 && pageSignals.pushyPhraseCount > 0) {
+    if (pageSignals.passwordFieldCount > 0 && pageSignals.pushyPhraseCount >= 2) {
       score += SIGNAL_WEIGHTS.moderate.normal;
       signalCounts.strong += 1;
       addReasonEntry(reasonEntries, "A password box and pushy words together need extra care.", SIGNAL_WEIGHTS.strong.light);
@@ -2510,9 +2522,17 @@
       .trim();
   }
 
+  const NON_DOMAIN_LABEL_SUFFIXES = new Set(["js", "ts", "css", "py", "rb", "go", "rs", "md", "txt", "pdf", "zip", "exe", "json"]);
+
   function extractVisibleDomain(text) {
     const match = text.match(/([a-z0-9-]+\.)+[a-z]{2,}/i);
-    return match ? match[0].toLowerCase() : "";
+
+    if (!match) {
+      return "";
+    }
+
+    const candidate = match[0].toLowerCase();
+    return NON_DOMAIN_LABEL_SUFFIXES.has(candidate.split(".").pop()) ? "" : candidate;
   }
 
   function looksLikeExplicitUrlLabel(text, visibleDomain) {
@@ -2529,7 +2549,7 @@
 
   function findActionBrandInText(text) {
     return BRAND_RULES.find((rule) => {
-      const mentionsBrand = text.includes(rule.brand);
+      const mentionsBrand = findBrandWordIndex(text, rule.brand) >= 0;
       const mentionsAction = ACTION_PROMPT_WORDS.some((word) => text.includes(word));
 
       return mentionsBrand && mentionsAction;
@@ -3238,7 +3258,7 @@
       return;
     }
 
-    const anchor = event.target.closest("a[href]");
+    const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
 
     if (!anchor || anchor.closest("#ai-guardian-root")) {
       return;
@@ -3764,6 +3784,11 @@
     });
     hideDecisionDialog();
 
+    if (options?.warningKey) {
+      // Going back is not approval: warn again on the next attempt.
+      state.shownWarningKeys.delete(options.warningKey);
+    }
+
     if (typeof options?.onStay === "function") {
       options.onStay();
     }
@@ -3865,6 +3890,10 @@
   }
 
   function createAssistantUi() {
+    ["ai-guardian-root", "ai-guardian-modal-root", "ai-guardian-family-root"].forEach((staleId) => {
+      document.getElementById(staleId)?.remove();
+    });
+
     const root = document.createElement("div");
     root.id = "ai-guardian-root";
     const modalRoot = document.createElement("div");
@@ -4856,6 +4885,8 @@
   }
 
   document.addEventListener("agws:email-controller-ready", initializeEmailSafetyController);
+  // Deps are published at the end of this script; defer so an already loaded controller sees them.
+  window.setTimeout(initializeEmailSafetyController, 0);
 
   function clearWebmailPreviews() {
     getEmailSafetyController()?.clearPreviews?.();
@@ -5981,8 +6012,11 @@
   function unwrapGoogleRedirect(urlString) {
     try {
       const parsedUrl = new URL(urlString, location.href);
+      const host = normalizeHost(parsedUrl.hostname);
+      const isGoogleRedirect = parsedUrl.pathname === "/url" &&
+        (isOfficialHostForBrand(host, "google") || /^google\.[a-z.]+$/.test(host));
 
-      if (!parsedUrl.hostname.includes("google.")) {
+      if (!isGoogleRedirect) {
         return parsedUrl.toString();
       }
 
@@ -6060,16 +6094,26 @@
     });
   }
 
+  function findBrandWordIndex(text, brand) {
+    if (!brand) {
+      return -1;
+    }
+
+    const match = new RegExp(`(?:^|[^a-z0-9])(${brand})(?![a-z0-9])`, "i").exec(text || "");
+    return match ? match.index + match[0].indexOf(match[1]) : -1;
+  }
+
   function findBrandMention(text) {
     const normalizedText = (text || "").toLowerCase();
-    const matchedRule = BRAND_RULES.find((rule) => normalizedText.includes(rule.brand));
+    const matchedRule = BRAND_RULES.find((rule) => findBrandWordIndex(normalizedText, rule.brand) >= 0);
     return matchedRule ? matchedRule.brand : "";
   }
 
   function isStrongBrandClaim(text, brand) {
     const normalizedText = String(text || "").toLowerCase();
+    const brandIndex = findBrandWordIndex(normalizedText, brand);
 
-    if (!brand || !normalizedText.includes(brand)) {
+    if (brandIndex < 0) {
       return false;
     }
 
@@ -6087,7 +6131,6 @@
     ];
 
     return identityClaimHints.some((hint) => {
-      const brandIndex = normalizedText.indexOf(brand);
       const hintIndex = normalizedText.indexOf(hint);
 
       return hintIndex >= 0 && Math.abs(hintIndex - brandIndex) <= 40;
@@ -6108,8 +6151,14 @@
       }
 
       const compactLabel = normalizedLabel.replace(/-/g, "");
+      const registrableLabel = (getRootDomain(hostname).split(".")[0] || "").toLowerCase();
 
-      if (isSingleEditAway(compactLabel, rule.brand)) {
+      if (registrableLabel === rule.brand && compactLabel === rule.brand) {
+        // google.de, amazon.fr, paypal.me: the brand's own name on another suffix.
+        continue;
+      }
+
+      if (rule.brand.length >= 6 && isSingleEditAway(compactLabel, rule.brand)) {
         return rule.brand;
       }
 

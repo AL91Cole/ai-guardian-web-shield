@@ -122,6 +122,7 @@ function handleReadAloudClick() {
   currentSpeech.rate = 0.95;
   currentSpeech.pitch = 1;
   currentSpeech.onend = updateReadButton;
+  currentSpeech.onstart = updateReadButton;
   currentSpeech.onerror = updateReadButton;
 
   window.speechSynthesis.cancel();

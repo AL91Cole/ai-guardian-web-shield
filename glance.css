@@ -218,3 +218,8 @@ h1 {
   cursor: default;
   opacity: 0.72;
 }
+
+/* Keep the hidden attribute authoritative over layout display values. */
+[hidden] {
+  display: none !important;
+}

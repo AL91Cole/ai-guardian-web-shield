@@ -291,6 +291,7 @@ function handleAuthorizedMessage(message, sender, sendResponse) {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   clearTabState(tabId);
+  tabGuardianState.delete(tabId);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
@@ -1046,9 +1047,10 @@ function getTabState(tabId) {
 }
 
 function clearTabState(tabId) {
+  // Guardian activity intentionally survives navigation so rapid page
+  // changes can still be noticed; it is dropped when the tab closes.
   tabReports.delete(tabId);
   tabUiState.delete(tabId);
-  tabGuardianState.delete(tabId);
   clearActionBadge(tabId);
 }
 

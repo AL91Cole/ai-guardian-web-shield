@@ -15,6 +15,11 @@ Risk scores are intended to provide guidance and awareness. They do not guarante
   any tab that had not already been scanned from the side panel. Both views now
   share one injection list in `shared/pageScripts.js`, and a partial injection no
   longer locks the page out of a later successful scan.
+- **Review fixes.** Passcode panels now collapse, Labyrinth Guardian's rapid
+  browsing prompts can fire again, webmail rows are no longer all flagged as
+  risky, the sign-in bypass is limited to real webmail contexts, brand and
+  lookalike checks stop flagging "purchase" or google.de, and "Go Back" on a
+  warning no longer approves the next click. Full list in `CHANGELOG.md`.
 - **Release tooling.** `npm run release` runs the tests, validates the manifest,
   injection order, syntax, versions and the no-network rule, then builds the
   Chrome Web Store zip in `dist/`. CI runs the same steps and attaches the zip.
@@ -325,7 +330,7 @@ No browsing content is transmitted to external servers by default.
 
 | Path | Purpose |
 | --- | --- |
-| `manifest.json` | Chrome extension configuration and permissions (Manifest V3). |
+| `manifest.json` | Chrome extension configuration and permissions (Manifest V3, Chrome 116+). |
 | `background.js` | Service worker: per-tab reports, settings, Family Protection passcode, side panel. |
 | `content.js` | Page analysis, risk score, floating badge, search badges, proactive warnings. |
 | `shared/` | Modules injected with `content.js`: behavior correlation and monitor, URL and DOM helpers, and `pageScripts.js`, the single injection list. |
