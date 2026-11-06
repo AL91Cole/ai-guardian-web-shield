@@ -7,6 +7,14 @@
     return root.aiGuardianEmailDeps || {};
   }
 
+  // Links are hidden from scanning only inside cue slots this extension created.
+  // A page-authored element that copies the slot class names is scanned like
+  // any other content, so it cannot be used to smuggle links past the scanner.
+  function isInsideOwnCueSlot(element) {
+    const injector = emailNamespace.emailUiInjector;
+    return typeof injector?.isInsideOwnSlot === "function" && injector.isInsideOwnSlot(element);
+  }
+
   function getVisibleMessageScopes(environment) {
     const deps = getDeps();
     const domUtils = emailNamespace.domUtils || {};
@@ -61,7 +69,7 @@
           scope.querySelectorAll(selector).forEach((element) => {
             if (
               !(element instanceof HTMLElement) ||
-              element.closest(".ai-guardian-mail-cue-slot") ||
+              isInsideOwnCueSlot(element) ||
               typeof deps.isVisibleElement !== "function" ||
               !deps.isVisibleElement(element) ||
               typeof domUtils.isElementNearViewport !== "function" ||
@@ -87,7 +95,7 @@
       scope.querySelectorAll("button[formaction], button[data-url], [role='button'][data-url]").forEach((element) => {
         if (
           !(element instanceof HTMLElement) ||
-          element.closest(".ai-guardian-mail-cue-slot") ||
+          isInsideOwnCueSlot(element) ||
           typeof deps.isVisibleElement !== "function" ||
           !deps.isVisibleElement(element) ||
           typeof domUtils.isElementNearViewport !== "function" ||

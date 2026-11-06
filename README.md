@@ -39,9 +39,12 @@ firewall. No new browser permissions are requested.
 
 ### Check the update
 
-Run `node --test tests/*.test.js` with Node.js 22 or newer. The tests cover normal
+Run `npm test` (or `node --test tests/*.test.js`) with Node.js 22 or newer, then
+`npm run check` for the syntax and whitespace checks CI runs. The tests cover normal
 sign-ins, joined warning signals, form isolation, submission overrides,
-single-use approval, expiry, and metadata privacy.
+single-use approval, expiry, metadata privacy, and webmail cue ownership (page-authored
+elements that copy the cue class names are neither trusted, hidden from link scanning,
+nor removed).
 
 For a manual Chrome check, load the extension using the Developer Mode steps
 below. From the repository directory run `python3 -m http.server 8000`, open

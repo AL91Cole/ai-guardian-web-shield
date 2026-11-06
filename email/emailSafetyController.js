@@ -286,7 +286,7 @@
     }
 
     return Boolean(
-      node.closest(".ai-guardian-mail-cue-slot") ||
+      emailNamespace.emailUiInjector?.isInsideOwnSlot?.(node) ||
       node.closest("#ai-guardian-root") ||
       node.closest("#ai-guardian-modal-root") ||
       node.closest("#ai-guardian-family-root")

@@ -2,13 +2,82 @@
 (() => {
   const root = window;
   const emailNamespace = root.AI_GUARDIAN_EMAIL = root.AI_GUARDIAN_EMAIL || {};
+  const SLOT_CLASS = "ai-guardian-mail-cue-slot";
+  const SLOT_SELECTOR = `.${SLOT_CLASS}`;
+  const TOKEN_ATTRIBUTE = "data-agws-token";
+
+  // Cue slots live in the page DOM, so a page (or an HTML email rendered by a
+  // provider that keeps class names) can author elements that look exactly like
+  // ours. Only elements created here are trusted: they are tracked in a WeakSet
+  // that page scripts cannot reach, and they carry a per-load token so other
+  // modules can confirm they belong to this injection.
+  const ownedSlots = new WeakSet();
+  const ownershipToken = createOwnershipToken();
+
+  // If this module is injected again, retire the previous instance's cues first.
+  // Its WeakSet is unreachable from here, so those slots could not be pruned later.
+  emailNamespace.emailUiInjector?.clearPreviews?.();
+
+  function createOwnershipToken() {
+    const bytes = new Uint8Array(16);
+    const cryptoApi = root.crypto;
+
+    if (cryptoApi && typeof cryptoApi.getRandomValues === "function") {
+      cryptoApi.getRandomValues(bytes);
+    } else {
+      for (let index = 0; index < bytes.length; index += 1) {
+        bytes[index] = Math.floor(Math.random() * 256);
+      }
+    }
+
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  function getOwnershipToken() {
+    return ownershipToken;
+  }
+
+  // The token alone never grants trust: it sits on a DOM attribute, so a page
+  // script could copy it. Membership in the WeakSet proves this module created
+  // the element; the token check additionally ties it to the current load.
+  function isOwnSlot(element) {
+    return (
+      element instanceof HTMLElement &&
+      ownedSlots.has(element) &&
+      element.getAttribute(TOKEN_ATTRIBUTE) === ownershipToken
+    );
+  }
+
+  function isInsideOwnSlot(node) {
+    if (!node) {
+      return false;
+    }
+
+    const element = node instanceof Element ? node : node.parentElement;
+
+    if (!(element instanceof Element) || typeof element.closest !== "function") {
+      return false;
+    }
+
+    return isOwnSlot(element.closest(SLOT_SELECTOR));
+  }
+
+  function registerOwnedSlot(cueSlot) {
+    cueSlot.setAttribute(TOKEN_ATTRIBUTE, ownershipToken);
+    ownedSlots.add(cueSlot);
+    return cueSlot;
+  }
 
   function getDeps() {
     return root.aiGuardianEmailDeps || {};
   }
 
+  function getOwnedSlots() {
+    return Array.from(document.querySelectorAll(SLOT_SELECTOR)).filter((cueSlot) => isOwnSlot(cueSlot));
+  }
+
   function clearPreviews() {
-    document.querySelectorAll(".ai-guardian-mail-cue-slot").forEach((cueNode) => {
+    getOwnedSlots().forEach((cueNode) => {
       cueNode.remove();
     });
   }
@@ -59,9 +128,7 @@
     }
 
     const existingSlot = Array.from(host.children).find((child) => {
-      return child instanceof HTMLElement &&
-        child.classList.contains("ai-guardian-mail-cue-slot") &&
-        child.dataset.kind === "row";
+      return isOwnSlot(child) && child.dataset.kind === "row";
     });
 
     if (existingSlot instanceof HTMLElement) {
@@ -69,10 +136,11 @@
     }
 
     const cueSlot = document.createElement("span");
-    cueSlot.className = "ai-guardian-mail-cue-slot ai-guardian-mail-row-slot";
+    cueSlot.className = `${SLOT_CLASS} ai-guardian-mail-row-slot`;
     cueSlot.dataset.kind = "row";
     cueSlot.dataset.agwsEnhanced = "true";
     cueSlot.dataset.agwsFeature = "email-preview";
+    registerOwnedSlot(cueSlot);
     host.appendChild(cueSlot);
     return cueSlot;
   }
@@ -80,24 +148,25 @@
   function ensureLinkCueSlot(element) {
     const sibling = element.nextElementSibling;
 
-    if (
-      sibling instanceof HTMLElement &&
-      sibling.classList.contains("ai-guardian-mail-cue-slot") &&
-      sibling.dataset.kind === "link"
-    ) {
+    if (isOwnSlot(sibling) && sibling.dataset.kind === "link") {
       return sibling;
     }
 
     const cueSlot = document.createElement("span");
-    cueSlot.className = "ai-guardian-mail-cue-slot ai-guardian-mail-link-slot";
+    cueSlot.className = `${SLOT_CLASS} ai-guardian-mail-link-slot`;
     cueSlot.dataset.kind = "link";
     cueSlot.dataset.agwsEnhanced = "true";
     cueSlot.dataset.agwsFeature = "email-preview";
+    registerOwnedSlot(cueSlot);
     element.insertAdjacentElement("afterend", cueSlot);
     return cueSlot;
   }
 
   function updateCue(cueSlot, label, detail, tone) {
+    if (!isOwnSlot(cueSlot)) {
+      return;
+    }
+
     let cue = cueSlot.firstElementChild;
 
     if (!(cue instanceof HTMLElement) || !cue.classList.contains("ai-guardian-mail-cue")) {
@@ -116,7 +185,7 @@
   }
 
   function pruneInactiveCueSlots(activeSlots) {
-    document.querySelectorAll(".ai-guardian-mail-cue-slot").forEach((cueSlot) => {
+    getOwnedSlots().forEach((cueSlot) => {
       if (!activeSlots.has(cueSlot)) {
         cueSlot.remove();
       }
@@ -129,6 +198,9 @@
     ensureRowCueSlot,
     ensureLinkCueSlot,
     updateCue,
-    pruneInactiveCueSlots
+    pruneInactiveCueSlots,
+    isOwnSlot,
+    isInsideOwnSlot,
+    getOwnershipToken
   };
 })();

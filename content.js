@@ -1065,13 +1065,39 @@
       node.closest("#ai-guardian-modal-root") ||
       node.id === "ai-guardian-family-root" ||
       node.closest("#ai-guardian-family-root") ||
-      node.closest(".ai-guardian-mail-cue-slot") ||
-      node.closest("[data-agws-enhanced='true'][data-agws-feature='email-preview']")
+      isInsideOwnEmailCueSlot(node)
     ) {
       return true;
     }
 
     return Boolean(node.closest(".ai-guardian-gsr-slot, .ai-guardian-gsr-badge-wrap"));
+  }
+
+  // Mail cue markup lives in the page DOM, so the static class names and
+  // data-agws-* attributes can be copied by a page or an HTML email. A node only
+  // counts as assistant output when the email injector created its slot and the
+  // slot carries the token generated for this load. Anything else is a real page
+  // change and is re-analyzed.
+  function isInsideOwnEmailCueSlot(node) {
+    const injector = window.AI_GUARDIAN_EMAIL?.emailUiInjector;
+
+    if (
+      !(node instanceof Element) ||
+      typeof injector?.isOwnSlot !== "function" ||
+      typeof injector?.getOwnershipToken !== "function"
+    ) {
+      return false;
+    }
+
+    const cueSlot = node.closest(".ai-guardian-mail-cue-slot");
+
+    if (!(cueSlot instanceof Element) || !injector.isOwnSlot(cueSlot)) {
+      return false;
+    }
+
+    const token = injector.getOwnershipToken();
+
+    return typeof token === "string" && token.length > 0 && cueSlot.getAttribute("data-agws-token") === token;
   }
 
   function patchHistoryForSpaNavigation() {
@@ -5389,7 +5415,7 @@
 
     scopes.forEach((scope) => {
       scope.querySelectorAll("a[href], button[formaction], button[data-url], [role='button'][data-url]").forEach((element) => {
-        if (!(element instanceof HTMLElement) || element.closest(".ai-guardian-mail-cue-slot")) {
+        if (!(element instanceof HTMLElement) || isInsideOwnEmailCueSlot(element)) {
           return;
         }
 
