@@ -5443,7 +5443,8 @@
 
     scopes.forEach((scope) => {
       scope.querySelectorAll("a[href], button[formaction], button[data-url], [role='button'][data-url]").forEach((element) => {
-        if (!(element instanceof HTMLElement) || element.closest(".ai-guardian-mail-cue-slot")) {
+        // Only cue slots this injection created hide their contents from the count.
+        if (!(element instanceof HTMLElement) || getEmailFeatureModule()?.emailUiInjector?.isOwnSlot?.(element)) {
           return;
         }
 

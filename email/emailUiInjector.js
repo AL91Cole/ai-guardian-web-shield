@@ -12,6 +12,10 @@
   const ownedSlots = new WeakSet();
   const cueToken = createCueToken();
 
+  // If this module is injected again, retire the previous instance's cues first:
+  // its WeakSet is unreachable from here, so they could never be pruned later.
+  emailNamespace.emailUiInjector?.clearPreviews?.();
+
   function createCueToken() {
     const bytes = new Uint8Array(12);
 

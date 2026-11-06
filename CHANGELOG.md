@@ -39,6 +39,11 @@ All notable changes to AI Guardian Web Shield. Versions match `manifest.json`.
   sites; named providers now match by host only.
 - Email: sender domain extraction kept a trailing `>`, breaking the brand
   versus sender check. The visible address is now parsed with a pattern.
+- Email: the legacy visible-link counter in `content.js` also honours cue slot
+  ownership instead of the copyable class name, a repeated injection of
+  `email/emailUiInjector.js` retires the previous instance's cues, and the cue
+  ownership tests now cover the link scanner, the content-script mutation
+  filter, and a copied token.
 - Email: the document-wide mutation observer no longer runs on non-mail pages,
   provider selectors are cached per route, and a second injection no longer
   creates a duplicate controller.
