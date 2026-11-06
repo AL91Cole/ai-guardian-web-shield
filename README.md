@@ -46,8 +46,9 @@ or allowed to continue.
 The evidence is held in memory for up to 90 seconds, with at most 64 events
 and 8 findings. It uses generated form IDs and origins only. It does not read
 field values or retain URL paths, queries, fragments, keystrokes, or request
-bodies in the behavior history. Navigation resets that history. Page reports
-still include the current page URL.
+bodies in the behavior history. Navigation to a new document resets that
+history; a fragment-only change such as `#panel` routing on the same page keeps
+it. Page reports still include the current page URL.
 
 **Visibility:** this extension checks browser-visible forms on the page where
 it has been activated. It cannot observe hidden AI-agent tool calls, JavaScript

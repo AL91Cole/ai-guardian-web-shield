@@ -332,3 +332,41 @@ test("behavior summaries exclude URL paths, query parameters, fragments, and cre
     assert.equal(serialized.includes(secret), false);
   }
 });
+
+test("a fragment-only change is not a navigation and keeps the evidence chain", () => {
+  const { monitor, events, resetCount } = recordingMonitor();
+  const form = makeForm();
+  const field = addField(form);
+  monitor.interaction({ type: "focusin", isTrusted: true, target: field }, `${PAGE_URL}#step-1`);
+  monitor.submit(form, null, `${PAGE_URL}#panel`);
+  monitor.submit(form, null, PAGE_URL);
+  assert.equal(resetCount(), 0);
+  assert.equal(events.length, 3);
+  assert.equal(events[0].formId, events[1].formId);
+  assert.equal(events[1].formId, events[2].formId);
+});
+
+test("a changed external destination is still correlated across a fragment navigation", () => {
+  let now = 1000;
+  const monitor = loadMonitor().createMonitor({ now: () => now });
+  const form = makeForm();
+  const field = addField(form);
+  monitor.interaction({ type: "focusin", isTrusted: true, target: field }, PAGE_URL);
+  now += 100;
+  const submitter = makeSubmitter(form, { formaction: "https://collector.example.net/session" });
+  const { summary } = monitor.submit(form, submitter, `${PAGE_URL}#panel`);
+  assert.equal(summary.findings.length, 1);
+  assert.equal(summary.findings[0].rule, "credential-destination-change");
+  assert.equal(summary.events.length, 2);
+});
+
+test("path and query changes are navigations that reset the chain", () => {
+  const { monitor, events, resetCount } = recordingMonitor();
+  monitor.submit(makeForm(), null, `${PAGE_URL}#panel`);
+  monitor.submit(makeForm(), null, `${PAGE_URL}?step=2#panel`);
+  assert.equal(resetCount(), 1);
+  monitor.submit(makeForm(), null, "https://accounts.example.test/profile#panel");
+  assert.equal(resetCount(), 2);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].pageUrl, "https://accounts.example.test/profile#panel");
+});

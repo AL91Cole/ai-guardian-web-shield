@@ -6,6 +6,12 @@ All notable changes to AI Guardian Web Shield. Versions match `manifest.json`.
 
 ### Fixed
 
+- A fragment-only URL change (`#panel` routing on the same page) no longer
+  resets the Connected Form Actions evidence chain, page approvals or shown
+  warnings. A fragment change is not a navigation to a new document, and
+  resetting on it let a page discard the credential interaction before a
+  changed-destination submission. Navigation to a new path or query still
+  resets everything, and the chain still records origins only.
 - The toolbar popup injected the page scripts without
   `shared/behaviorCorrelation.js` and `shared/behaviorMonitor.js`, so the first
   scan or "Scan Again" on a tab that had not been scanned from the side panel

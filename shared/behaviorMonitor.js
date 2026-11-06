@@ -47,8 +47,15 @@
       nextForm = 0;
       currentPage = "";
     }
+    // A fragment-only change (#panel routing) stays on the same document, so
+    // the evidence chain survives it; any other URL change is a navigation.
+    function documentOf(pageUrl) {
+      const text = String(pageUrl || "");
+      const hashIndex = text.indexOf("#");
+      return hashIndex === -1 ? text : text.slice(0, hashIndex);
+    }
     function syncPage(pageUrl) {
-      if (currentPage && currentPage !== pageUrl) reset();
+      if (currentPage && documentOf(currentPage) !== documentOf(pageUrl)) reset();
       currentPage = pageUrl;
     }
     function formId(form) {

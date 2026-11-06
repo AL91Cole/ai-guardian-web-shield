@@ -83,3 +83,11 @@ test('popup and side panel install the main-world hook after injecting page scri
   assert.match(content, /addEventListener\("agws:route-change"/);
   assert.doesNotMatch(content, /patchHistoryForSpaNavigation/);
 });
+
+test('no isolated-world script wraps history itself; both scanners listen for the main-world event', () => {
+  for (const file of ['content.js', 'email/emailSafetyController.js']) {
+    const source = fs.readFileSync(path.join(root, file), 'utf8');
+    assert.doesNotMatch(source, /history\.(pushState|replaceState)\s*=/, `${file} wraps history in the isolated world`);
+    assert.match(source, /addEventListener\("agws:route-change"/, `${file} does not listen for route changes`);
+  }
+});

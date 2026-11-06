@@ -98,6 +98,10 @@ function harness({ realAssessment = false } = {}) {
   const end = source.indexOf("\n  function refreshBehaviorReport()", start);
   assert.ok(start >= 0 && end > start, "actual content-script handler is available");
   vm.runInContext(source.slice(start, end), context);
+  const syncStart = source.indexOf("  function withoutFragment(url) {");
+  const syncEnd = source.indexOf("\n  function resetCurrentPageStateForNavigation()", syncStart);
+  assert.ok(syncStart >= 0 && syncEnd > syncStart, "actual location sync helpers are available");
+  vm.runInContext(source.slice(syncStart, syncEnd), context);
   if (realAssessment) {
     const assessmentStart = source.indexOf("  function assessForm(form,");
     const assessmentEnd = source.indexOf("\n  function maybeShowPageWarning(", assessmentStart);
@@ -116,6 +120,8 @@ function harness({ realAssessment = false } = {}) {
   }
   return {
     context, decisions, requests, activity, makeEvent, submitter,
+    pageUrl,
+    navigate: url => { context.location = new URL(url); },
     form: () => new HTMLFormElement(),
     handle: event => context.handleFormSubmit(event),
     summary: () => context.state.behaviorMonitor.getSummary()
@@ -237,4 +243,31 @@ test("a risky form does not make a different harmless form inherit its warning",
   assert.equal(event.defaultPrevented, false);
   assert.equal(app.decisions.length, 1);
   assert.equal(app.summary().score, 88, "earlier page evidence remains available");
+});
+
+test("a fragment-only route change keeps the evidence chain; a new path resets it", () => {
+  const app = harness();
+  const form = app.form();
+  form.method = "post";
+  const field = form.elements[0];
+  app.context.state.behaviorMonitor.interaction({ type: "focusin", isTrusted: true, target: field }, app.pageUrl);
+  assert.equal(app.summary().events.length, 1);
+
+  app.navigate(`${app.pageUrl}#panel`);
+  const button = app.submitter(form, { formaction: "https://collector.example.net/receive", formmethod: "post" });
+  app.handle(app.makeEvent(form, button));
+  assert.equal(app.context.state.lastUrl, `${app.pageUrl}#panel`);
+  assert.equal(app.summary().events[0].type, "credential-interaction", "the earlier interaction survives the fragment change");
+  const finding = app.summary().findings.find(item => item.rule === "credential-destination-change");
+  assert.ok(finding, "the destination change correlates with the pre-fragment interaction");
+  assert.equal(finding.stage, "paused");
+  assert.equal(app.decisions.length, 1);
+
+  app.navigate("https://accounts.example.test/profile#panel");
+  const laterForm = app.form();
+  laterForm.method = "post";
+  app.handle(app.makeEvent(laterForm, null));
+  assert.equal(app.context.state.lastUrl, "https://accounts.example.test/profile#panel");
+  assert.equal(app.summary().events.length, 1, "a new document starts a fresh chain");
+  assert.equal(app.summary().findings.length, 0, "an ordinary same-origin POST on the new page has no inherited finding");
 });
